@@ -3,6 +3,7 @@ new torrents, stopping as soon as a known entry is encountered."""
 
 import logging
 import os
+import random
 import time
 
 import db
@@ -25,40 +26,54 @@ except ValueError:
 
 
 def poll_once(session, conn) -> int:
-    """Fetch the browse page and upsert new rows until a known hash is hit.
-    Returns the number of rows upserted."""
-    resp = session.get(BROWSE_URL, timeout=30)
-    if resp.status_code != 200:
-        log.error("HTTP %d fetching browse page", resp.status_code)
-        return 0
+    """Paginate from newest, upsert new rows, stop when a known hash is hit.
+    Returns the total number of rows upserted."""
+    url = BROWSE_URL
+    visited_urls: set[str] = set()
+    total = 0
+    max_pages = 10
 
-    rows, _ = parse_page(resp.text)
-    if not rows:
-        log.info("No torrents found on page")
-        return 0
-
-    # Check which hashes are already in the DB
-    all_hashes = [r["info_hash"] for r in rows]
-    seen = db.known_hashes(conn, all_hashes)
-
-    new_rows = []
-    for row in rows:
-        if row["info_hash"] in seen:
-            log.debug("Known hash %s — stopping", row["info_hash"])
+    while url and len(visited_urls) < max_pages:
+        if url in visited_urls:
             break
-        new_rows.append(row)
+        visited_urls.add(url)
 
-    if not new_rows:
+        resp = session.get(url, timeout=30)
+        if resp.status_code != 200:
+            log.error("HTTP %d fetching %s", resp.status_code, url)
+            break
+
+        rows, next_url = parse_page(resp.text)
+        if not rows:
+            break
+
+        all_hashes = [r["info_hash"] for r in rows]
+        seen = db.known_hashes(conn, all_hashes)
+
+        new_rows = []
+        done = False
+        for row in rows:
+            if row["info_hash"] in seen:
+                done = True
+                break
+            row["source"] = "watcher"
+            new_rows.append(row)
+
+        if new_rows:
+            db.upsert_torrents(conn, new_rows)
+            total += len(new_rows)
+            log.info("Upserted %d new torrent(s) from %s", len(new_rows), url)
+
+        if done:
+            break
+
+        url = next_url
+        if url:
+            time.sleep(random.uniform(0.5, 1.5))
+
+    if total == 0:
         log.info("No new torrents")
-        return 0
-
-    # Set source for watcher-originated rows
-    for row in new_rows:
-        row["source"] = "watcher"
-
-    db.upsert_torrents(conn, new_rows)
-    log.info("Upserted %d new torrent(s)", len(new_rows))
-    return len(new_rows)
+    return total
 
 
 def _get_conn():
