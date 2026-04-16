@@ -1,6 +1,7 @@
 """One-shot full backfill: walks all pages of /torrents/browse/all/ and
 stores every torrent in the database."""
 
+import argparse
 import logging
 import random
 import time
@@ -19,23 +20,17 @@ START_URL = f"{BASE_URL}/torrents/browse/all/"
 PAGE_DELAY = (0.5, 1.5)  # seconds, random range
 
 
-def run():
+def run(start_url: str | None = None):
     session = make_session()
     conn = db.get_connection()
     db.init_schema(conn)
 
-    url = START_URL
-    visited_urls: set[str] = set()
+    url = start_url or START_URL
     page_num = 0
     total_upserted = 0
 
     try:
         while url:
-            if url in visited_urls:
-                log.info("Cursor repeated (%s) — reached last page, done", url)
-                break
-            visited_urls.add(url)
-
             page_num += 1
             log.info("Fetching page %d: %s", page_num, url)
 
@@ -66,4 +61,11 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--cursor",
+        metavar="URL",
+        help="Resume from this URL (copy from the last log line before interruption)",
+    )
+    args = parser.parse_args()
+    run(start_url=args.cursor)

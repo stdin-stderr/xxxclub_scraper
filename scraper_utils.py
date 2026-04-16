@@ -1,12 +1,13 @@
 import os
 import re
 from datetime import datetime, timezone
-from urllib.parse import urlencode
 
 import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib.parse import quote
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -53,11 +54,10 @@ def extract_info_hash(id_attr: str) -> str | None:
 
 
 def build_magnet(info_hash: str, title: str = "") -> str:
-    xt = f"urn:btih:{info_hash}"
-    params = {"xt": xt}
+    magnet = f"magnet:?xt=urn:btih:{info_hash}"
     if title:
-        params["dn"] = title
-    return "magnet:?" + urlencode(params)
+        magnet += "&dn=" + quote(title, safe="")
+    return magnet
 
 
 def parse_size(size_str: str) -> int | None:

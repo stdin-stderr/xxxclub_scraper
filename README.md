@@ -49,3 +49,10 @@ docker compose exec xxxclub_scraper python import_all.py
 ```
 
 This walks all pages newest-to-oldest and can be interrupted safely — all committed pages are preserved. Re-running after an interruption will upsert duplicates harmlessly.
+
+If you interupt the backfill, continue with:
+
+```bash
+docker compose exec xxxclub_scraper python import_all.py --cursor [last url from logfile]
+```
+  
