@@ -57,12 +57,13 @@ def poll_once(session, conn) -> int:
 
         # Stop paginating once we hit a known hash, but upsert everything on this page
         done = any(r["info_hash"] in seen for r in rows)
+        new_count = sum(1 for r in rows if r["info_hash"] not in seen)
 
         for row in rows:
             row["source"] = "watcher"
         db.upsert_torrents(conn, rows)
         total += len(rows)
-        log.info("Upserted %d row(s) from %s", len(rows), url)
+        log.info("Upserted %d row(s) from %s (%d new)", len(rows), url, new_count)
 
         if done:
             break
