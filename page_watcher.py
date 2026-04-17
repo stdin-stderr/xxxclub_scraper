@@ -17,12 +17,19 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 BROWSE_URL = f"{BASE_URL}/torrents/browse/all/"
+TOP100_URLS = [f"{BASE_URL}/torrents/top100/{i}" for i in range(8)]
 
 try:
-    SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL", 300))
+    SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL", 3600))
 except ValueError:
-    log.warning("Invalid SCRAPE_INTERVAL value, defaulting to 300s")
-    SCRAPE_INTERVAL = 300
+    log.warning("Invalid SCRAPE_INTERVAL value, defaulting to 3600s")
+    SCRAPE_INTERVAL = 3600
+
+try:
+    MAX_PAGES = int(os.environ.get("MAX_PAGES", 10))
+except ValueError:
+    log.warning("Invalid MAX_PAGES value, defaulting to 10")
+    MAX_PAGES = 10
 
 
 def poll_once(session, conn) -> int:
@@ -31,9 +38,7 @@ def poll_once(session, conn) -> int:
     url = BROWSE_URL
     visited_urls: set[str] = set()
     total = 0
-    max_pages = 10
-
-    while url and len(visited_urls) < max_pages:
+    while url and len(visited_urls) < MAX_PAGES:
         if url in visited_urls:
             break
         visited_urls.add(url)
@@ -50,19 +55,14 @@ def poll_once(session, conn) -> int:
         all_hashes = [r["info_hash"] for r in rows]
         seen = db.known_hashes(conn, all_hashes)
 
-        new_rows = []
-        done = False
-        for row in rows:
-            if row["info_hash"] in seen:
-                done = True
-                break
-            row["source"] = "watcher"
-            new_rows.append(row)
+        # Stop paginating once we hit a known hash, but upsert everything on this page
+        done = any(r["info_hash"] in seen for r in rows)
 
-        if new_rows:
-            db.upsert_torrents(conn, new_rows)
-            total += len(new_rows)
-            log.info("Upserted %d new torrent(s) from %s", len(new_rows), url)
+        for row in rows:
+            row["source"] = "watcher"
+        db.upsert_torrents(conn, rows)
+        total += len(rows)
+        log.info("Upserted %d row(s) from %s", len(rows), url)
 
         if done:
             break
@@ -72,7 +72,31 @@ def poll_once(session, conn) -> int:
             time.sleep(random.uniform(0.5, 1.5))
 
     if total == 0:
-        log.info("No new torrents")
+        log.info("No torrents found")
+    return total
+
+
+def poll_top100(session, conn) -> int:
+    """Fetch all top100 pages and upsert every row to refresh seeder/leecher counts.
+    Returns the total number of rows upserted."""
+    total = 0
+    for url in TOP100_URLS:
+        resp = session.get(url, timeout=30)
+        if resp.status_code != 200:
+            log.error("HTTP %d fetching %s", resp.status_code, url)
+            continue
+
+        rows, _ = parse_page(resp.text)
+        if not rows:
+            continue
+
+        for row in rows:
+            row["source"] = "top100"
+        db.upsert_torrents(conn, rows)
+        total += len(rows)
+        log.info("top100 %s: upserted %d row(s)", url, len(rows))
+        time.sleep(random.uniform(0.5, 1.5))
+
     return total
 
 
@@ -90,6 +114,7 @@ def run():
     while True:
         try:
             poll_once(session, conn)
+            poll_top100(session, conn)
         except Exception as exc:
             log.error("Error during poll: %s", exc, exc_info=True)
             log.info("Reconnecting to database...")
