@@ -26,7 +26,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   table { border-collapse: collapse; width: 100%; }
   th { text-align: left; border-bottom: 1px solid #444; padding: 5px 8px; color: #aaa; white-space: nowrap; }
   td { padding: 4px 8px; border-bottom: 1px solid #222; vertical-align: top; }
-  td.thumb { width: 140px; }
   td.thumb { position: relative; width: 140px; min-width: 140px; height: 104px; }
   td.thumb img { position: absolute; top: 4px; left: 0; width: 136px; height: 96px; object-fit: cover; border-radius: 3px; cursor: zoom-in; transition: width 0.15s ease, height 0.15s ease, box-shadow 0.15s ease; z-index: 1; }
   td.thumb img:hover { width: 500px; height: auto; object-fit: unset; box-shadow: 0 4px 24px #000; z-index: 10; }
@@ -42,6 +41,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .quickfilters a { color: #aaa; background: #1e1e1e; border: 1px solid #333; padding: 2px 8px; border-radius: 3px; white-space: nowrap; }
   .quickfilters a:hover { background: #2a2a2a; color: #ddd; text-decoration: none; }
   .quickfilters .sep { color: #444; align-self: center; }
+  /* Scene metadata */
+  .scene-site { font-size: 11px; color: #888; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+  .scene-site img { height: 14px; width: auto; vertical-align: middle; }
+  .scene-title { font-size: 12px; color: #aaa; margin-top: 2px; }
+  .scene-performers { font-size: 11px; color: #7af; margin-top: 2px; }
+  .scene-tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
+  .scene-tags span { font-size: 10px; background: #1e2a1e; color: #7c7; border: 1px solid #334; padding: 1px 5px; border-radius: 2px; }
+  .scene-desc { font-size: 11px; color: #666; margin-top: 3px; max-width: 480px; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -96,8 +103,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <tbody>
     {% for t in torrents %}
     <tr>
-      <td class="thumb">{% if t.image_url %}<img src="{{ t.image_url }}" alt="">{% endif %}</td>
-      <td><a href="{{ t.magnet }}" title="{{ t.title }}">{{ t.title }}</a></td>
+      <td class="thumb">
+        {% set poster = t.poster_url or t.image_url %}
+        {% if poster %}<img src="{{ poster }}" alt="">{% endif %}
+      </td>
+      <td>
+        <a href="{{ t.magnet }}" title="{{ t.title }}">{{ t.title }}</a>
+        {% if t.scene_title %}
+        <div class="scene-title">{{ t.scene_title }}</div>
+        {% endif %}
+        {% if t.site_name or t.network_name %}
+        <div class="scene-site">
+          {% set logo = t.site_logo_url or t.network_logo_url %}
+          {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
+          {{ t.site_name or t.network_name }}
+        </div>
+        {% endif %}
+        {% if t.performers %}
+        <div class="scene-performers">{{ t.performers | map(attribute="name") | list | join(", ") }}</div>
+        {% endif %}
+        {% if t.tags %}
+        <div class="scene-tags">{% for tag in t.tags[:8] %}<span>{{ tag }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if t.scene_description %}
+        <div class="scene-desc">{{ t.scene_description[:200] }}{% if t.scene_description | length > 200 %}…{% endif %}</div>
+        {% endif %}
+      </td>
       <td>{{ t.category or "" }}</td>
       <td>{{ t.size_human }}</td>
       <td>{{ t.seeders if t.seeders is not none else "" }}</td>

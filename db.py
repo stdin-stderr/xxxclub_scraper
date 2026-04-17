@@ -1,6 +1,6 @@
 import os
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, Json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,6 +20,48 @@ CREATE TABLE IF NOT EXISTS torrents (
     image_url   TEXT,
     scraped_at  TIMESTAMPTZ DEFAULT NOW()
 );
+"""
+
+CREATE_SCENES = """
+CREATE TABLE IF NOT EXISTS scenes (
+    id               TEXT PRIMARY KEY,
+    title            TEXT,
+    description      TEXT,
+    poster_url       TEXT,
+    background_url   TEXT,
+    date             DATE,
+    duration_seconds INT,
+    site_name        TEXT,
+    site_slug        TEXT,
+    site_logo_url    TEXT,
+    network_name     TEXT,
+    network_slug     TEXT,
+    network_logo_url TEXT,
+    performers       JSONB,
+    tags             JSONB,
+    fetched_at       TIMESTAMPTZ DEFAULT NOW()
+);
+"""
+
+CREATE_TORRENT_SCENES = """
+CREATE TABLE IF NOT EXISTS torrent_scenes (
+    info_hash  TEXT NOT NULL REFERENCES torrents(info_hash) ON DELETE CASCADE,
+    scene_id   TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+    matched_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (info_hash, scene_id)
+);
+"""
+
+ALTER_META_ATTEMPTED = """
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'torrents' AND column_name = 'metadata_attempted_at'
+    ) THEN
+        ALTER TABLE torrents ADD COLUMN metadata_attempted_at TIMESTAMPTZ;
+    END IF;
+END $$;
 """
 
 UPSERT = """
@@ -65,6 +107,9 @@ def get_connection():
 def init_schema(conn):
     with conn.cursor() as cur:
         cur.execute(CREATE_TABLE)
+        cur.execute(CREATE_SCENES)
+        cur.execute(CREATE_TORRENT_SCENES)
+        cur.execute(ALTER_META_ATTEMPTED)
     conn.commit()
 
 
@@ -147,29 +192,122 @@ def search_torrents(
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict]:
-    """Search torrents with optional filters, sorting, and pagination."""
+    """Search torrents with optional filters, sorting, and pagination.
+    Includes scene metadata when available."""
     if sort_by not in ALLOWED_SORT_COLS:
         sort_by = "seeders"
     sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
 
     sql = (
-        "SELECT info_hash, title, magnet, size_bytes, category, "
-        "date_added, uploader, seeders, leechers, source, image_url, scraped_at "
-        "FROM torrents WHERE TRUE"
+        "SELECT t.info_hash, t.title, t.magnet, t.size_bytes, t.category, "
+        "t.date_added, t.uploader, t.seeders, t.leechers, t.source, t.image_url, t.scraped_at, "
+        "s.title AS scene_title, s.description AS scene_description, "
+        "s.poster_url, s.site_name, s.site_logo_url, "
+        "s.network_name, s.network_logo_url, s.performers, s.tags "
+        "FROM torrents t "
+        "LEFT JOIN LATERAL ("
+        "  SELECT scene_id FROM torrent_scenes WHERE info_hash = t.info_hash LIMIT 1"
+        ") ts ON true "
+        "LEFT JOIN scenes s ON s.id = ts.scene_id "
+        "WHERE TRUE"
     )
     params: list = []
     if query:
-        sql += " AND title ILIKE %s"
+        sql += " AND t.title ILIKE %s"
         params.append(f"%{query}%")
     if category:
-        sql += " AND category = %s"
+        sql += " AND t.category = %s"
         params.append(category)
-    sql += f" ORDER BY {sort_by} {sort_order} NULLS LAST"
+    sql += f" ORDER BY t.{sort_by} {sort_order} NULLS LAST"
     sql += " LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
     with conn.cursor() as cur:
         cur.execute(sql, params)
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def upsert_scene(conn, scene: dict):
+    """Insert or update a ThePornDB scene."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO scenes (
+                id, title, description, poster_url, background_url, date,
+                duration_seconds, site_name, site_slug, site_logo_url,
+                network_name, network_slug, network_logo_url,
+                performers, tags, fetched_at
+            ) VALUES (
+                %(id)s, %(title)s, %(description)s, %(poster_url)s, %(background_url)s, %(date)s,
+                %(duration_seconds)s, %(site_name)s, %(site_slug)s, %(site_logo_url)s,
+                %(network_name)s, %(network_slug)s, %(network_logo_url)s,
+                %(performers)s, %(tags)s, NOW()
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                title            = EXCLUDED.title,
+                description      = EXCLUDED.description,
+                poster_url       = EXCLUDED.poster_url,
+                background_url   = EXCLUDED.background_url,
+                date             = EXCLUDED.date,
+                duration_seconds = EXCLUDED.duration_seconds,
+                site_name        = EXCLUDED.site_name,
+                site_slug        = EXCLUDED.site_slug,
+                site_logo_url    = EXCLUDED.site_logo_url,
+                network_name     = EXCLUDED.network_name,
+                network_slug     = EXCLUDED.network_slug,
+                network_logo_url = EXCLUDED.network_logo_url,
+                performers       = EXCLUDED.performers,
+                tags             = EXCLUDED.tags,
+                fetched_at       = NOW()
+            """,
+            {**scene, "performers": Json(scene["performers"]), "tags": Json(scene["tags"])},
+        )
+    conn.commit()
+
+
+def link_torrent_scene(conn, info_hash: str, scene_id: str):
+    """Link a torrent to a scene (idempotent)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO torrent_scenes (info_hash, scene_id, matched_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (info_hash, scene_id) DO NOTHING
+            """,
+            (info_hash, scene_id),
+        )
+    conn.commit()
+
+
+def mark_metadata_attempted(conn, info_hash: str):
+    """Record that metadata lookup was attempted for this torrent."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE torrents SET metadata_attempted_at = NOW() WHERE info_hash = %s",
+            (info_hash,),
+        )
+    conn.commit()
+
+
+def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
+    """Return up to `limit` torrents that need a metadata lookup attempt."""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT t.info_hash, t.title
+            FROM torrents t
+            LEFT JOIN torrent_scenes ts ON ts.info_hash = t.info_hash
+            WHERE ts.scene_id IS NULL
+              AND (
+                t.metadata_attempted_at IS NULL
+                OR t.metadata_attempted_at < NOW() - INTERVAL '{retry_days} days'
+              )
+            ORDER BY t.date_added DESC NULLS LAST
+            LIMIT %s
+            """,
+            (limit,),
+        )
         cols = [desc[0] for desc in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
