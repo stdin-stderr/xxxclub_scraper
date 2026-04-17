@@ -38,9 +38,12 @@ docker compose up -d
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://scraper:scraper@db:5432/xxxclub` | Postgres connection string |
+| `POSTGRES_USER` | `xxxclub_scraper` | Postgres username |
+| `POSTGRES_PASSWORD` | `xxxclub_scraper` | Postgres password |
+| `POSTGRES_DB` | `xxxclub` | Postgres database name |
+| `POSTGRES_HOST_PORT` | `5432` | Host-side port mapping for the `db` container |
 | `BASE_URL` | `https://xxxclub.to` | Site base URL |
-| `SCRAPE_INTERVAL` | `300` | Seconds between page watcher polls |
+| `SCRAPE_INTERVAL` | `3600` | Seconds between page watcher polls |
 
 ## Running a full backfill
 
