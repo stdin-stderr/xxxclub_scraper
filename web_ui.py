@@ -29,7 +29,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   td.thumb { width: 140px; }
   td.thumb { position: relative; width: 140px; min-width: 140px; height: 104px; }
   td.thumb img { position: absolute; top: 4px; left: 0; width: 136px; height: 96px; object-fit: cover; border-radius: 3px; cursor: zoom-in; transition: width 0.15s ease, height 0.15s ease, box-shadow 0.15s ease; z-index: 1; }
-  td.thumb img:hover { width: 340px; height: auto; object-fit: unset; box-shadow: 0 4px 24px #000; z-index: 10; }
+  td.thumb img:hover { width: 500px; height: auto; object-fit: unset; box-shadow: 0 4px 24px #000; z-index: 10; }
   tr:nth-child(even) td { background: #181818; }
   a { color: #7af; text-decoration: none; }
   a:hover { text-decoration: underline; }
