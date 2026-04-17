@@ -68,6 +68,17 @@ def init_schema(conn):
     conn.commit()
 
 
+def seconds_since_last_scrape(conn) -> float | None:
+    """Return seconds since the most recently scraped row, or None if the table is empty."""
+    from datetime import datetime, timezone
+    with conn.cursor() as cur:
+        cur.execute("SELECT MAX(scraped_at) FROM torrents")
+        last = cur.fetchone()[0]
+    if last is None:
+        return None
+    return (datetime.now(timezone.utc) - last).total_seconds()
+
+
 def known_hashes(conn, hashes: list[str]) -> set[str]:
     """Return the subset of hashes that already exist in the database."""
     if not hashes:

@@ -112,6 +112,13 @@ def run():
     log.info("Page watcher started — polling every %ds", SCRAPE_INTERVAL)
     while True:
         try:
+            age = db.seconds_since_last_scrape(conn)
+            if age is not None and age < SCRAPE_INTERVAL:
+                wait = SCRAPE_INTERVAL - age
+                log.info("Last scrape was %.0fs ago, skipping poll — sleeping %.0fs", age, wait)
+                time.sleep(wait)
+                continue
+
             poll_once(session, conn)
             poll_top100(session, conn)
         except Exception as exc:
