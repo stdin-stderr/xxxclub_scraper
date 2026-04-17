@@ -78,6 +78,28 @@ def known_hashes(conn, hashes: list[str]) -> set[str]:
         return {row[0] for row in cur.fetchall()}
 
 
+def update_counts_by_title(conn, rows: list[dict]) -> int:
+    """Update seeders/leechers/scraped_at for rows matched by exact title.
+    Used for top100 pages where no info hash is available.
+    Returns the number of rows updated."""
+    if not rows:
+        return 0
+    updated = 0
+    with conn.cursor() as cur:
+        for row in rows:
+            cur.execute(
+                """UPDATE torrents
+                      SET seeders    = %s,
+                          leechers   = %s,
+                          scraped_at = %s
+                    WHERE title = %s""",
+                (row["seeders"], row["leechers"], row["scraped_at"], row["title"]),
+            )
+            updated += cur.rowcount
+    conn.commit()
+    return updated
+
+
 def upsert_torrents(conn, rows: list[dict]):
     """Bulk upsert a list of torrent dicts. Each dict must have at least
     info_hash and magnet."""

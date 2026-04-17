@@ -7,7 +7,7 @@ import random
 import time
 
 import db
-from scraper_utils import BASE_URL, make_session, parse_page
+from scraper_utils import BASE_URL, make_session, parse_page, parse_top100_page
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,8 +77,8 @@ def poll_once(session, conn) -> int:
 
 
 def poll_top100(session, conn) -> int:
-    """Fetch all top100 pages and upsert every row to refresh seeder/leecher counts.
-    Returns the total number of rows upserted."""
+    """Fetch all top100 pages and update seeder/leecher counts by title match.
+    Returns the total number of rows updated."""
     total = 0
     for url in TOP100_URLS:
         resp = session.get(url, timeout=30)
@@ -86,15 +86,13 @@ def poll_top100(session, conn) -> int:
             log.error("HTTP %d fetching %s", resp.status_code, url)
             continue
 
-        rows, _ = parse_page(resp.text)
+        rows = parse_top100_page(resp.text)
         if not rows:
             continue
 
-        for row in rows:
-            row["source"] = "top100"
-        db.upsert_torrents(conn, rows)
-        total += len(rows)
-        log.info("top100 %s: upserted %d row(s)", url, len(rows))
+        updated = db.update_counts_by_title(conn, rows)
+        total += updated
+        log.info("top100 %s: updated %d/%d row(s)", url, updated, len(rows))
         time.sleep(random.uniform(0.5, 1.5))
 
     return total

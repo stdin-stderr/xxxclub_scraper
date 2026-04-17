@@ -163,3 +163,34 @@ def parse_page(html: str) -> tuple[list[dict], str | None]:
         next_url = BASE_URL + next_a["href"]
 
     return rows, next_url
+
+
+def parse_top100_page(html: str) -> list[dict]:
+    """Parse a top100 page. Returns rows with title/seeders/leechers only —
+    top100 pages use numeric IDs so no info hash is available. The caller
+    matches rows to existing DB records by title."""
+    soup = BeautifulSoup(html, "lxml")
+    rows = []
+
+    for li in soup.select("div.divtableinside li"):
+        # Skip the header row (contains <span> with plain text like "Name")
+        torrent_a = li.find("a", id=lambda v: v and v.startswith("#i"))
+        if not torrent_a:
+            continue
+
+        title = torrent_a.get_text(strip=True)
+
+        see_span = li.find("span", class_="see")
+        lee_span = li.find("span", class_="lee")
+        seeders = _to_int(see_span.get_text(strip=True)) if see_span else None
+        leechers = _to_int(lee_span.get_text(strip=True)) if lee_span else None
+
+        if title and seeders is not None:
+            rows.append({
+                "title": title,
+                "seeders": seeders,
+                "leechers": leechers,
+                "scraped_at": datetime.now(timezone.utc),
+            })
+
+    return rows
