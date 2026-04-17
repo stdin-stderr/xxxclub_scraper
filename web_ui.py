@@ -27,8 +27,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   th { text-align: left; border-bottom: 1px solid #444; padding: 5px 8px; color: #aaa; white-space: nowrap; }
   td { padding: 4px 8px; border-bottom: 1px solid #222; vertical-align: top; }
   td.thumb { width: 140px; }
-  td.thumb img { width: 136px; height: 96px; object-fit: cover; display: block; border-radius: 3px; transition: transform 0.15s ease, box-shadow 0.15s ease; cursor: zoom-in; position: relative; z-index: 1; }
-  td.thumb img:hover { transform: scale(3.5); transform-origin: left center; box-shadow: 0 4px 24px #000; z-index: 10; }
+  td.thumb { position: relative; width: 140px; min-width: 140px; height: 104px; }
+  td.thumb img { position: absolute; top: 4px; left: 0; width: 136px; height: 96px; object-fit: cover; border-radius: 3px; cursor: zoom-in; transition: width 0.15s ease, height 0.15s ease, box-shadow 0.15s ease; z-index: 1; }
+  td.thumb img:hover { width: 340px; height: auto; object-fit: unset; box-shadow: 0 4px 24px #000; z-index: 10; }
   tr:nth-child(even) td { background: #181818; }
   a { color: #7af; text-decoration: none; }
   a:hover { text-decoration: underline; }
