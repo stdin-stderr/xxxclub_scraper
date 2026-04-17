@@ -49,6 +49,8 @@ COLS = (
     "scraped_at",
 )
 
+ALLOWED_SORT_COLS = {"seeders", "leechers", "date_added", "title", "size_bytes"}
+
 
 def get_connection():
     return psycopg2.connect(
@@ -98,6 +100,67 @@ def update_counts_by_title(conn, rows: list[dict]) -> int:
             updated += cur.rowcount
     conn.commit()
     return updated
+
+
+def list_categories(conn) -> list[str]:
+    """Return distinct non-null categories sorted alphabetically."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT category FROM torrents "
+            "WHERE category IS NOT NULL ORDER BY category"
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def count_torrents(conn, query: str | None = None, category: str | None = None) -> int:
+    """Count rows matching the given filters."""
+    sql = "SELECT COUNT(*) FROM torrents WHERE TRUE"
+    params: list = []
+    if query:
+        sql += " AND title ILIKE %s"
+        params.append(f"%{query}%")
+    if category:
+        sql += " AND category = %s"
+        params.append(category)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()[0]
+
+
+def search_torrents(
+    conn,
+    query: str | None = None,
+    category: str | None = None,
+    sort_by: str = "seeders",
+    sort_order: str = "desc",
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Search torrents with optional filters, sorting, and pagination."""
+    if sort_by not in ALLOWED_SORT_COLS:
+        sort_by = "seeders"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+
+    sql = (
+        "SELECT info_hash, title, magnet, size_bytes, category, "
+        "date_added, uploader, seeders, leechers, source, image_url, scraped_at "
+        "FROM torrents WHERE TRUE"
+    )
+    params: list = []
+    if query:
+        sql += " AND title ILIKE %s"
+        params.append(f"%{query}%")
+    if category:
+        sql += " AND category = %s"
+        params.append(category)
+    sql += f" ORDER BY {sort_by} {sort_order} NULLS LAST"
+    sql += " LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
 def upsert_torrents(conn, rows: list[dict]):
