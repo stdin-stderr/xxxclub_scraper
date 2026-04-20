@@ -46,9 +46,10 @@ CREATE TABLE IF NOT EXISTS scenes (
 
 CREATE_TORRENT_SCENES = """
 CREATE TABLE IF NOT EXISTS torrent_scenes (
-    info_hash  TEXT NOT NULL REFERENCES torrents(info_hash) ON DELETE CASCADE,
-    scene_id   TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
-    matched_at TIMESTAMPTZ DEFAULT NOW(),
+    info_hash    TEXT NOT NULL REFERENCES torrents(info_hash) ON DELETE CASCADE,
+    scene_id     TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+    matched_at   TIMESTAMPTZ DEFAULT NOW(),
+    match_score  REAL,
     PRIMARY KEY (info_hash, scene_id)
 );
 """
@@ -101,7 +102,7 @@ _META_SORT_COLS = {"release_date"}
 def get_connection():
     return psycopg2.connect(
         host=os.environ.get("POSTGRES_HOST", "localhost"),
-        port=5432,
+        port=int(os.environ.get("POSTGRES_PORT", 5432)),
         user=os.environ["POSTGRES_USER"],
         password=os.environ["POSTGRES_PASSWORD"],
         dbname=os.environ["POSTGRES_DB"],
@@ -305,16 +306,18 @@ def upsert_scene(conn, scene: dict):
     conn.commit()
 
 
-def link_torrent_scene(conn, info_hash: str, scene_id: str):
-    """Link a torrent to a scene (idempotent)."""
+def link_torrent_scene(conn, info_hash: str, scene_id: str, match_score: float | None = None):
+    """Link a torrent to a scene (idempotent). Updates match_score if re-inserted."""
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO torrent_scenes (info_hash, scene_id, matched_at)
-            VALUES (%s, %s, NOW())
-            ON CONFLICT (info_hash, scene_id) DO NOTHING
+            INSERT INTO torrent_scenes (info_hash, scene_id, matched_at, match_score)
+            VALUES (%s, %s, NOW(), %s)
+            ON CONFLICT (info_hash, scene_id) DO UPDATE SET
+                match_score = EXCLUDED.match_score,
+                matched_at  = EXCLUDED.matched_at
             """,
-            (info_hash, scene_id),
+            (info_hash, scene_id, match_score),
         )
     conn.commit()
 
@@ -330,13 +333,19 @@ def mark_metadata_attempted(conn, info_hash: str):
 
 
 def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
-    """Return up to `limit` torrents that need a metadata lookup attempt."""
+    """Return up to `limit` torrents that need a metadata lookup attempt.
+
+    Each row includes structured fields from torrent_meta (may be None if not yet extracted):
+    meta_title, sitename, release_date.
+    """
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT t.info_hash, t.title
+            SELECT t.info_hash, t.title,
+                   tm.title AS meta_title, tm.sitename, tm.release_date
             FROM torrents t
             LEFT JOIN torrent_scenes ts ON ts.info_hash = t.info_hash
+            LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash
             WHERE ts.scene_id IS NULL
               AND (
                 t.metadata_attempted_at IS NULL

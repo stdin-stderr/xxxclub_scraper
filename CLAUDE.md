@@ -9,11 +9,13 @@ scraper_utils.py   shared HTTP session, HTML parsers, helpers
 db.py              schema, upsert, title-based update
 import_all.py      one-shot full backfill (all pages, newest → oldest)
 page_watcher.py    long-running service: polls browse + top100 on an interval
+meta_extract.py    regex extraction of site/date/title from torrent titles → torrent_meta
+metadata_fetcher.py  ThePornDB scene matching using torrent_meta structured fields
 ```
 
 ## Database
 
-Single table `torrents`:
+Table `torrents`:
 
 | Column | Type | Notes |
 |---|---|---|
@@ -29,9 +31,31 @@ Single table `torrents`:
 | `source` | TEXT | `browse`, `watcher`, or `top100` |
 | `image_url` | TEXT | full-res (`/p/…`), converted from thumbnail (`/ps/…`) |
 | `scraped_at` | TIMESTAMPTZ | |
+| `metadata_attempted_at` | TIMESTAMPTZ | last ThePornDB lookup attempt; retried after 7 days |
+
+Table `torrent_meta` — structured fields extracted from the raw torrent title by `meta_extract.py`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `info_hash` | TEXT PK FK | |
+| `title` | TEXT | clean scene title (site/date/codec noise stripped) |
+| `resolution` | TEXT | 480p / 720p / 1080p / 2160p |
+| `release_date` | DATE | parsed from title |
+| `sitename` | TEXT | first meaningful word of title |
+
+Table `scenes` — ThePornDB scene records (title, description, poster, background, date, duration, site/network info, performers JSONB, tags JSONB).
+
+Table `torrent_scenes` — many-to-many join between `torrents` and `scenes`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `info_hash` | TEXT FK | |
+| `scene_id` | TEXT FK | |
+| `matched_at` | TIMESTAMPTZ | |
+| `match_score` | REAL | composite score 0.0–1.0 from metadata_fetcher |
 
 Connection is built from env vars (not a single `DATABASE_URL`):
-`POSTGRES_HOST` (injected by compose as `db`) / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / port hardcoded to 5432.
+`POSTGRES_HOST` (injected by compose as `db`) / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` (default 5432).
 
 ## Site quirks
 
@@ -80,10 +104,14 @@ docker compose exec db psql -U xxxclub_scraper -d xxxclub -c \
 | `POSTGRES_USER` | `xxxclub_scraper` | |
 | `POSTGRES_PASSWORD` | `xxxclub_scraper` | |
 | `POSTGRES_DB` | `xxxclub` | |
+| `POSTGRES_PORT` | `5432` | Container-internal port |
 | `POSTGRES_HOST_PORT` | `5432` | Host-side port mapping only |
 | `BASE_URL` | `https://xxxclub.to` | |
 | `SCRAPE_INTERVAL` | `3600` | Seconds between watcher polls |
 | `MAX_PAGES` | `10` | Max browse pages per watcher poll |
+| `PORNDB_API_KEY` | _(unset)_ | Enables ThePornDB metadata fetcher |
+| `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
+| `METADATA_MIN_SCORE` | `0.6` | Minimum composite score to accept a TPDB match |
 
 ## Useful queries
 
@@ -98,4 +126,23 @@ SELECT info_hash FROM torrents ORDER BY seeders DESC NULLS LAST LIMIT 100;
 SELECT category, COUNT(*), pg_size_pretty(SUM(size_bytes))
 FROM torrents WHERE date_added::date = '2026-04-17'
 GROUP BY category ORDER BY count DESC;
+
+-- Match score distribution
+SELECT round(match_score::numeric, 1) AS bucket, count(*)
+FROM torrent_scenes GROUP BY bucket ORDER BY bucket;
+
+-- Low-confidence matches (candidates for manual review or threshold tuning)
+SELECT t.title, s.title AS scene, ts.match_score
+FROM torrent_scenes ts
+JOIN torrents t ON t.info_hash = ts.info_hash
+JOIN scenes s ON s.id = ts.scene_id
+WHERE ts.match_score < 0.75
+ORDER BY ts.match_score;
+```
+
+## Migrations
+
+```sql
+-- Add match_score column (run once on existing databases)
+ALTER TABLE torrent_scenes ADD COLUMN IF NOT EXISTS match_score REAL;
 ```

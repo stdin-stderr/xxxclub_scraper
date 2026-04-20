@@ -1,7 +1,9 @@
+import difflib
 import logging
 import os
 import re
 import time
+from datetime import date
 
 import requests
 from dotenv import load_dotenv
@@ -14,57 +16,7 @@ _log = logging.getLogger(__name__)
 
 METADATA_INTERVAL = int(os.environ.get("METADATA_INTERVAL", 300))
 PORNDB_API_KEY = os.environ.get("PORNDB_API_KEY", "")
-
-# Noise tokens to strip from torrent titles before sending to ThePornDB
-_STRIP_RE = re.compile(
-    r"\[.*?\]"           # [XC], [release group]
-    r"|\bXXX\b"
-    r"|\b\d{3,4}p\b"     # 480p 720p 1080p 2160p
-    r"|\bMP4-\w+\b"
-    r"|\bMKV-\w+\b"
-    r"|\bWEB-\w+\b"
-    r"|\bWRB\b"
-    r"|\bP2P\b"
-    r"|\bWEB\b"
-    r"|\bHEVC\b"
-    r"|\bx264\b"
-    r"|\bx265\b"
-    r"|\biTALiAN\b"
-    r"|\bUNCUT\b"
-    r"|\bUNCENSORED\b"
-    r"|\bDVDRip\b"
-    r"|\bBluRay\b",
-    re.IGNORECASE,
-)
-
-# Format A: SiteName YY MM DD Scene Title ... XXX
-_FORMAT_A = re.compile(r"^(\w+)\s+\d{2}\s+\d{2}\s+\d{2}\s+(.*?)\s+XXX", re.IGNORECASE)
-
-# Format B: SiteName - Performer(s) - Title (DD.MM.YYYY)
-_FORMAT_B = re.compile(r"^(.+?)\s+-\s+.+?\s+-\s+(.+?)\s+\(")
-
-
-def clean_title(title: str) -> tuple[str, str]:
-    """Return (site_name, stripped_title) ready for the ThePornDB parse endpoint."""
-    m = _FORMAT_A.match(title)
-    if m:
-        site = m.group(1)
-        scene = m.group(2).strip()
-        stripped = _STRIP_RE.sub("", f"{site} {scene}").strip()
-        return site, stripped
-
-    m = _FORMAT_B.match(title)
-    if m:
-        site = m.group(1).strip()
-        title_part = m.group(2).strip()
-        stripped = _STRIP_RE.sub("", f"{site} {title_part}").strip()
-        return site, stripped
-
-    # Fallback: first word is site, strip noise from everything
-    parts = title.split()
-    site = parts[0] if parts else ""
-    stripped = _STRIP_RE.sub("", title).strip()
-    return site, stripped
+METADATA_MIN_SCORE = float(os.environ.get("METADATA_MIN_SCORE", "0.6"))
 
 
 class PornDBClient:
@@ -78,18 +30,25 @@ class PornDBClient:
         })
 
     def search_scenes(
-        self, parse: str, site: str | None = None, per_page: int = 5
+        self,
+        parse: str,
+        site: str | None = None,
+        date: str | None = None,
+        per_page: int = 5,
     ) -> list[dict]:
         params: dict = {"parse": parse, "per_page": per_page}
         if site:
             params["site"] = site
             params["site_operation"] = "Site/Network"
+        if date:
+            params["date"] = date
         try:
             r = self._session.get(f"{self.BASE}/scenes", params=params, timeout=15)
             r.raise_for_status()
             return r.json().get("data", [])
         except requests.HTTPError as exc:
-            _log.warning("HTTP %s searching scenes (site=%s, parse=%s): %s", exc.response.status_code, site, parse, exc)
+            _log.warning("HTTP %s searching scenes (site=%s, parse=%s): %s",
+                         exc.response.status_code, site, parse, exc)
             return []
         except requests.RequestException as exc:
             _log.warning("Request error: %s", exc)
@@ -97,8 +56,6 @@ class PornDBClient:
 
 
 def _str(val) -> str | None:
-    """Coerce a value to str, handling cases where the API returns a dict instead of a URL.
-    For image dicts (full/large/medium/small), prefer the largest available size."""
     if val is None:
         return None
     if isinstance(val, str):
@@ -125,16 +82,13 @@ def _performer_image(p: dict) -> str:
 
 
 def _extract_scene(raw: dict) -> dict:
-    """Map a ThePornDB scene response to our scenes table schema."""
     site = raw.get("site") or {}
     network = site.get("network") or {}
-
     performers = [
         {"name": p.get("name", ""), "image_url": _performer_image(p)}
         for p in (raw.get("performers") or [])
     ]
     tags = [t.get("name", "") for t in (raw.get("tags") or []) if t.get("name")]
-
     return {
         "id": _str(raw.get("slug")) or str(raw.get("_id", "")),
         "title": _str(raw.get("title")),
@@ -154,8 +108,88 @@ def _extract_scene(raw: dict) -> dict:
     }
 
 
+def _normalize_site(name: str) -> str:
+    """Strip spaces, dashes, underscores for fuzzy site comparison."""
+    return re.sub(r"[\s\-_]", "", name).lower()
+
+
+def score_match(torrent: dict, scene: dict) -> tuple[float, float, float, float]:
+    """Score a TPDB scene candidate against structured torrent_meta fields.
+
+    meta_title may be a performer name rather than a scene title, so we take
+    the max of scene-title similarity and best-performer-name similarity.
+
+    Returns (total, title_or_performer_sim, site_sim, date_sim).
+    """
+    meta_title = (torrent.get("meta_title") or "").lower()
+    sitename = _normalize_site(torrent.get("sitename") or "")
+    release_date = torrent.get("release_date")  # datetime.date or None
+
+    scene_title = (scene.get("title") or "").lower()
+    scene_site = _normalize_site(scene.get("site_name") or "")
+    scene_date_str = scene.get("date") or ""
+
+    # Title similarity — also check against performer names; meta_title may be a performer
+    title_sim = difflib.SequenceMatcher(None, meta_title, scene_title).ratio() if meta_title else 0.0
+    for p in scene.get("performers") or []:
+        performer_sim = difflib.SequenceMatcher(
+            None, meta_title, (p.get("name") or "").lower()
+        ).ratio()
+        if performer_sim > title_sim:
+            title_sim = performer_sim
+
+    # Site similarity — normalize to handle "Hunt4K" vs "Hunt 4K"
+    if sitename and scene_site:
+        site_sim = 1.0 if (sitename in scene_site or scene_site in sitename) else 0.0
+    else:
+        site_sim = 0.0
+
+    # Date similarity
+    date_sim = 0.0
+    has_date = release_date is not None
+    if has_date and scene_date_str:
+        try:
+            scene_date = date.fromisoformat(scene_date_str[:10])
+            delta = abs((release_date - scene_date).days)
+            if delta == 0:
+                date_sim = 1.0
+            elif delta <= 30:
+                date_sim = 0.5
+        except ValueError:
+            pass
+
+    # Weights — redistribute date weight to title if no date available
+    if has_date:
+        title_w, site_w, date_w = 0.5, 0.3, 0.2
+    else:
+        title_w, site_w, date_w = 0.7, 0.3, 0.0
+
+    total = title_w * title_sim + site_w * site_sim + date_w * date_sim
+    return total, title_sim, site_sim, date_sim
+
+
+def _best_candidate(torrent: dict, candidates: list[dict], min_score: float) -> tuple[dict | None, float]:
+    """Score all candidates and return (best_scene_data, score) if above threshold, else (None, best_score)."""
+    best_scene = None
+    best_score = -1.0
+    for raw in candidates:
+        scene = _extract_scene(raw)
+        total, title_sim, site_sim, date_sim = score_match(torrent, scene)
+        performers_str = ", ".join(p["name"] for p in scene.get("performers") or [] if p.get("name"))
+        _log.debug(
+            "  candidate [%s] %r  date=%s  performers=%s  total=%.2f  title=%.2f  site=%.2f  date_sim=%.2f",
+            scene.get("site_name") or "?", scene.get("title"), scene.get("date") or "?",
+            performers_str or "—", total, title_sim, site_sim, date_sim,
+        )
+        if total > best_score:
+            best_score = total
+            best_scene = scene
+    if best_score >= min_score:
+        return best_scene, best_score
+    return None, best_score
+
+
 def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False):
-    """Attempt metadata lookup for up to `limit` unmatched torrents."""
     torrents = db.fetch_unmatched(conn, limit=limit)
     if not torrents:
         _log.debug("No unmatched torrents to process.")
@@ -167,34 +201,51 @@ def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False
 
     for i, torrent in enumerate(torrents, 1):
         info_hash = torrent["info_hash"]
-        title = torrent["title"] or ""
+        search_title = torrent.get("meta_title") or torrent["title"] or ""
+        sitename = torrent.get("sitename") or ""
+        release_date = torrent.get("release_date")
+        date_str = release_date.isoformat() if release_date else None
 
-        site_name, stripped = clean_title(title)
-        print(f"[{i}/{len(torrents)}] {title[:70]}", flush=True)
+        print(f"[{i}/{len(torrents)}] {(torrent['title'] or '')[:70]}", flush=True)
+        print(f"         meta: site={sitename!r}  title={search_title[:50]!r}  date={date_str}", flush=True)
 
-        # Pass 1: site-scoped parse
-        results = client.search_scenes(stripped, site=site_name)
+        candidates: list[dict] = []
 
-        # Pass 2: global fallback
-        if not results:
-            results = client.search_scenes(stripped)
+        # Pass 1: site + date + title
+        if not candidates and sitename and date_str:
+            candidates = client.search_scenes(search_title, site=sitename, date=date_str)
+            if candidates:
+                print(f"         pass 1 (site+date): {len(candidates)} candidates", flush=True)
 
-        if results:
-            scene_data = _extract_scene(results[0])
-            scene_id = scene_data["id"]
-            if scene_id:
+        # Pass 2: site + title
+        if not candidates and sitename:
+            candidates = client.search_scenes(search_title, site=sitename)
+            if candidates:
+                print(f"         pass 2 (site): {len(candidates)} candidates", flush=True)
+
+        # Pass 3: global
+        if not candidates:
+            candidates = client.search_scenes(search_title)
+            if candidates:
+                print(f"         pass 3 (global): {len(candidates)} candidates", flush=True)
+
+        if candidates:
+            best, score = _best_candidate(torrent, candidates, METADATA_MIN_SCORE)
+            if best and best.get("id"):
                 matched += 1
-                performers = ", ".join(p["name"] for p in scene_data["performers"][:3])
+                performers = ", ".join(p["name"] for p in best["performers"][:3])
                 print(
-                    f"         MATCH → [{scene_data.get('site_name') or '?'}] {scene_data.get('title')} ({scene_id})\n"
-                    f"                performers: {performers or '—'}  |  tags: {len(scene_data['tags'])}",
+                    f"         MATCH (score={score:.2f}) → [{best.get('site_name') or '?'}] {best.get('title')}\n"
+                    f"                performers: {performers or '—'}  |  tags: {len(best['tags'])}",
                     flush=True,
                 )
                 if not dry_run:
-                    db.upsert_scene(conn, scene_data)
-                    db.link_torrent_scene(conn, info_hash, scene_id)
+                    db.upsert_scene(conn, best)
+                    db.link_torrent_scene(conn, info_hash, best["id"], match_score=score)
+            else:
+                print(f"         NO MATCH (best score={score:.2f} < {METADATA_MIN_SCORE})", flush=True)
         else:
-            print("         NO MATCH", flush=True)
+            print("         NO RESULTS", flush=True)
 
         if not dry_run:
             db.mark_metadata_attempted(conn, info_hash)
@@ -204,9 +255,8 @@ def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False
 
 
 def run_loop():
-    """Long-running loop: enrich unmatched torrents every METADATA_INTERVAL seconds."""
     client = PornDBClient(PORNDB_API_KEY)
-    _log.info("Metadata fetcher started (interval=%ds).", METADATA_INTERVAL)
+    _log.info("Metadata fetcher started (interval=%ds, min_score=%.2f).", METADATA_INTERVAL, METADATA_MIN_SCORE)
 
     while True:
         conn = db.get_connection()
@@ -222,7 +272,7 @@ def run_loop():
 if __name__ == "__main__":
     import argparse
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(description="Fetch ThePornDB metadata for unmatched torrents.")
     parser.add_argument("--limit", type=int, default=100, help="Max torrents to process (default 100)")

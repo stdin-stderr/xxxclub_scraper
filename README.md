@@ -33,9 +33,27 @@ Both the watcher, the metadata fetcher, and the web UI run in the same container
 When `PORNDB_API_KEY` is set, a background fetcher enriches each torrent with scene metadata from [ThePornDB](https://theporndb.net). Matched data is stored in two additional tables:
 
 - **`scenes`** — one row per ThePornDB scene: title, description, poster, date, duration, site/network name and logo, performers (JSONB), tags (JSONB)
-- **`torrent_scenes`** — many-to-many link between torrents and scenes (multiple quality variants of the same release share one scene record)
+- **`torrent_scenes`** — many-to-many link between torrents and scenes; stores `match_score` so you can audit match quality
 
 The fetcher processes up to 100 unmatched torrents every `METADATA_INTERVAL` seconds and marks each attempt so failures are only retried after 7 days.
+
+### How matching works
+
+Structured fields from `torrent_meta` (populated by `meta_extract.py`) drive the search:
+
+1. **Pass 1** — ThePornDB query scoped to site + date + title (most specific)
+2. **Pass 2** — site + title (no date)
+3. **Pass 3** — global title search (fallback)
+
+Each pass returns up to 5 candidates. Every candidate is scored against the torrent's structured data:
+
+| Component | Weight | Logic |
+|---|---|---|
+| Title / performer | 50% | `difflib` ratio between `meta_title` and TPDB scene title **or** any performer name (whichever is higher — torrent titles often contain the performer rather than the scene title) |
+| Site | 30% | 1.0 if site names match after normalising whitespace/dashes (e.g. `Hunt4K` ↔ `Hunt 4K`), else 0 |
+| Date | 20% | 1.0 exact, 0.5 within 30 days, 0 otherwise; redistributed to title weight when no date is available |
+
+The highest-scoring candidate is accepted only if `score >= METADATA_MIN_SCORE` (default `0.6`). The score is stored in `torrent_scenes.match_score`.
 
 ### Dry run
 
@@ -45,7 +63,7 @@ Preview matches without writing anything to the database:
 docker compose exec xxxclub_scraper python metadata_fetcher.py --dry-run --limit 20
 ```
 
-Each torrent prints its matched scene (site, title, performers, tag count) or `NO MATCH`.
+Prints for each torrent: the extracted site/title/date, each TPDB candidate with its full score breakdown (title sim, site sim, date sim, total, performers, scene date), and whether the best candidate cleared the threshold.
 
 ### Force re-attempt all
 
@@ -79,6 +97,7 @@ docker compose up -d
 | `WEB_PORT` | `5000` | Port the web UI listens on |
 | `PORNDB_API_KEY` | _(unset)_ | ThePornDB API key; metadata fetcher is disabled if absent |
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
+| `METADATA_MIN_SCORE` | `0.6` | Minimum match score (0.0–1.0); lower = more matches, higher = fewer false positives |
 
 ## Web UI
 
