@@ -97,13 +97,23 @@ class PornDBClient:
 
 
 def _str(val) -> str | None:
-    """Coerce a value to str, handling cases where the API returns a dict instead of a URL."""
+    """Coerce a value to str, handling cases where the API returns a dict instead of a URL.
+    For image dicts (full/large/medium/small), prefer the largest available size."""
     if val is None:
         return None
     if isinstance(val, str):
         return val
     if isinstance(val, dict):
-        return val.get("url") or val.get("src") or val.get("path") or None
+        return (
+            val.get("full")
+            or val.get("large")
+            or val.get("medium")
+            or val.get("small")
+            or val.get("url")
+            or val.get("src")
+            or val.get("path")
+            or None
+        )
     return str(val)
 
 
@@ -129,7 +139,7 @@ def _extract_scene(raw: dict) -> dict:
         "id": _str(raw.get("slug")) or str(raw.get("_id", "")),
         "title": _str(raw.get("title")),
         "description": _str(raw.get("description")),
-        "poster_url": _str(raw.get("poster")) or _str(raw.get("image")),
+        "poster_url": _str(raw.get("posters")) or _str(raw.get("poster")) or _str(raw.get("image")),
         "background_url": _str(raw.get("background")),
         "date": _str(raw.get("date")),
         "duration_seconds": raw.get("duration"),
