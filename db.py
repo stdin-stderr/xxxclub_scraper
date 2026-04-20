@@ -98,6 +98,8 @@ ALLOWED_SORT_COLS = {"seeders", "leechers", "date_added", "title", "size_bytes",
 # Columns that live on torrent_meta rather than torrents
 _META_SORT_COLS = {"release_date"}
 
+ALLOWED_SCENE_SORT_COLS = {"date", "title", "site_name", "seeders"}
+
 
 def get_connection():
     return psycopg2.connect(
@@ -258,6 +260,108 @@ def search_torrents(
     if date_to:
         sql += " AND tm.release_date <= %s"
         params.append(date_to)
+    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST"
+    sql += " LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def count_scenes(
+    conn,
+    query: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    """Count distinct scenes that have at least one linked torrent."""
+    sql = (
+        "SELECT COUNT(DISTINCT s.id) FROM scenes s "
+        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
+        "WHERE TRUE"
+    )
+    params: list = []
+    if query:
+        sql += " AND s.title ILIKE %s"
+        params.append(f"%{query}%")
+    if site:
+        # Match regardless of internal spaces (e.g. "Tiny4K" ↔ "Tiny 4K")
+        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
+        params.append(f"%{site}%")
+        params.append(f"%{site.replace(' ', '')}%")
+    if date_from:
+        sql += " AND s.date >= %s"
+        params.append(date_from)
+    if date_to:
+        sql += " AND s.date <= %s"
+        params.append(date_to)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()[0]
+
+
+def search_scenes(
+    conn,
+    query: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort_by: str = "date",
+    sort_order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+) -> list[dict]:
+    """Return scenes that have at least one linked torrent, with torrents aggregated as JSON.
+    Only scenes with linked torrents are returned (INNER JOIN on torrent_scenes)."""
+    if sort_by not in ALLOWED_SCENE_SORT_COLS:
+        sort_by = "date"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    # seeders is an aggregate over joined torrents, not a scenes column
+    order_col = "MAX(t.seeders)" if sort_by == "seeders" else f"s.{sort_by}"
+
+    sql = (
+        "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
+        "s.date, s.duration_seconds, "
+        "s.site_name, s.site_logo_url, "
+        "s.network_name, s.network_logo_url, "
+        "s.performers, s.tags, "
+        "json_agg(json_build_object("
+        "  'info_hash', t.info_hash,"
+        "  'title', t.title,"
+        "  'magnet', t.magnet,"
+        "  'size_bytes', t.size_bytes,"
+        "  'category', t.category,"
+        "  'seeders', t.seeders,"
+        "  'leechers', t.leechers,"
+        "  'resolution', tm.resolution,"
+        "  'date_added', t.date_added"
+        ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
+        "FROM scenes s "
+        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
+        "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
+        "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
+        "WHERE TRUE"
+    )
+    params: list = []
+    if query:
+        sql += " AND s.title ILIKE %s"
+        params.append(f"%{query}%")
+    if site:
+        # Match regardless of internal spaces (e.g. "Tiny4K" ↔ "Tiny 4K")
+        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
+        params.append(f"%{site}%")
+        params.append(f"%{site.replace(' ', '')}%")
+    if date_from:
+        sql += " AND s.date >= %s"
+        params.append(date_from)
+    if date_to:
+        sql += " AND s.date <= %s"
+        params.append(date_to)
+    # GROUP BY PK — PostgreSQL infers functional dependency for other columns
+    sql += " GROUP BY s.id"
     sql += f" ORDER BY {order_col} {sort_order} NULLS LAST"
     sql += " LIMIT %s OFFSET %s"
     params.extend([limit, offset])
