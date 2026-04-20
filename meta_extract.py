@@ -43,6 +43,17 @@ _CATEGORY_RESOLUTION = {
     "UHD": "2160p",
 }
 
+# Trailing date patterns: (28.12.2025) or (14.02.2026)
+_RE_TRAILING_DATE = re.compile(r"\s*\(\s*\d{2}[./]\d{2}[./]\d{2,4}\s*\)?\s*$")
+# Trailing noise from resolution onward: "1080p MP4-WRB [XC]", "WEB-DL 1080p", etc.
+_RE_TRAILING_NOISE = re.compile(
+    r"\s+(?:\d{3,4}p\b|4K\b|8K\b|WEB[-\s]?DL\b|WEBRip\b|BluRay\b).*$", re.IGNORECASE
+)
+# Mid-title noise tokens
+_RE_MID_NOISE = re.compile(
+    r"\b(?:iTALiAN|POLISH|FRENCH|GERMAN|RUSSIAN|CZECH|HUNGARIAN|BTS)\b", re.IGNORECASE
+)
+
 
 def extract_resolution(title: str) -> str | None:
     alias = _RE_ALIAS.search(title)
@@ -95,8 +106,62 @@ def extract_sitename(title: str) -> str | None:
     return first
 
 
+def extract_title(title: str) -> str | None:
+    """Extract a clean scene title, stripping site name, date, resolution and codec noise."""
+    if not title:
+        return None
+
+    # Format B: dash-separated (SiteName - Performers - Title (date))
+    if " - " in title:
+        parts = title.split(" - ")
+        if len(parts) >= 3:
+            raw = " - ".join(parts[2:])
+        else:
+            raw = parts[1]
+        raw = _RE_TRAILING_DATE.sub("", raw)
+        raw = _RE_TRAILING_NOISE.sub("", raw)
+        raw = _RE_MID_NOISE.sub("", raw)
+        return raw.strip() or None
+
+    # Format A: SiteName YY MM DD <title> XXX ...
+    m = re.search(r"\b\d{2}\s+\d{2}\s+\d{2}\s+(.*?)\s+XXX\b", title, re.IGNORECASE)
+    if m:
+        raw = _RE_MID_NOISE.sub("", m.group(1))
+        return raw.strip() or None
+
+    # Format A2: SiteName YYYY <title> XXX ...
+    m = re.search(r"\b(?:19|20)\d{2}\s+(.*?)\s+XXX\b", title, re.IGNORECASE)
+    if m:
+        raw = _RE_MID_NOISE.sub("", m.group(1))
+        return raw.strip() or None
+
+    # Format E: SiteName E<number> <title> XXX ... (episode-numbered series)
+    m = re.search(r"\bE\d+\s+(.*?)\s+XXX\b", title, re.IGNORECASE)
+    if m:
+        raw = _RE_MID_NOISE.sub("", m.group(1))
+        return raw.strip() or None
+
+    # Fallback: drop first word (site), skip a bare "com" token if present,
+    # cut at XXX if found, otherwise strip trailing noise.
+    parts = title.split(None, 1)
+    if len(parts) < 2:
+        return None
+    raw = parts[1]
+    if raw.lower().startswith("com "):
+        raw = raw[4:]
+    # Cut at XXX boundary if present
+    xxx_match = re.search(r"\s+XXX\b", raw, re.IGNORECASE)
+    if xxx_match:
+        raw = raw[:xxx_match.start()]
+    else:
+        raw = _RE_TRAILING_NOISE.sub("", raw)
+    raw = _RE_MID_NOISE.sub("", raw)
+    return raw.strip() or None
+
+
 def extract_meta(title: str) -> dict:
     return {
+        "title": extract_title(title),
         "resolution": extract_resolution(title),
         "release_date": extract_date(title),
         "sitename": extract_sitename(title),
@@ -109,7 +174,7 @@ def upsert_torrent_meta(conn, rows: list[dict]):
     for row in rows:
         meta = extract_meta(row.get("title") or "")
         resolution = meta["resolution"] or _CATEGORY_RESOLUTION.get(row.get("category") or "")
-        tuples.append((row["info_hash"], resolution, meta["release_date"], meta["sitename"]))
+        tuples.append((row["info_hash"], meta["title"], resolution, meta["release_date"], meta["sitename"]))
     db.upsert_torrent_meta(conn, tuples)
 
 

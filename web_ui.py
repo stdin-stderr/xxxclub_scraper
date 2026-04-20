@@ -119,14 +119,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </td>
       <td>
         <a href="{{ t.magnet }}" title="{{ t.title }}">{{ t.title }}</a>
-        {% if t.scene_title %}
-        <div class="scene-title">{{ t.scene_title }}</div>
+        {% set display_title = t.scene_title or t.meta_title %}
+        {% if display_title %}
+        <div class="scene-title">{{ display_title }}</div>
         {% endif %}
-        {% if t.site_name or t.network_name %}
+        {% set display_site = t.site_name or t.network_name or t.sitename %}
+        {% if display_site %}
         <div class="scene-site">
           {% set logo = t.site_logo_url or t.network_logo_url %}
           {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
-          {{ t.site_name or t.network_name }}
+          {{ display_site }}
         </div>
         {% endif %}
         {% if t.performers %}

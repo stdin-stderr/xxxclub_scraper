@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS torrent_scenes (
 CREATE_TORRENT_META = """
 CREATE TABLE IF NOT EXISTS torrent_meta (
     info_hash    TEXT PRIMARY KEY REFERENCES torrents(info_hash) ON DELETE CASCADE,
+    title        TEXT,
     resolution   TEXT,
     release_date DATE,
     sitename     TEXT,
@@ -231,7 +232,7 @@ def search_torrents(
         "s.title AS scene_title, s.description AS scene_description, "
         "s.poster_url, s.site_name, s.site_logo_url, "
         "s.network_name, s.network_logo_url, s.performers, s.tags, "
-        "tm.sitename, tm.resolution, tm.release_date "
+        "tm.sitename, tm.title AS meta_title, tm.resolution, tm.release_date "
         "FROM torrents t "
         "LEFT JOIN LATERAL ("
         "  SELECT scene_id FROM torrent_scenes WHERE info_hash = t.info_hash LIMIT 1"
@@ -351,9 +352,10 @@ def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
 
 
 UPSERT_META = """
-INSERT INTO torrent_meta (info_hash, resolution, release_date, sitename)
+INSERT INTO torrent_meta (info_hash, title, resolution, release_date, sitename)
 VALUES %s
 ON CONFLICT (info_hash) DO UPDATE SET
+    title        = EXCLUDED.title,
     resolution   = EXCLUDED.resolution,
     release_date = EXCLUDED.release_date,
     sitename     = EXCLUDED.sitename,
@@ -362,7 +364,7 @@ ON CONFLICT (info_hash) DO UPDATE SET
 
 
 def upsert_torrent_meta(conn, tuples: list[tuple]):
-    """Bulk upsert (info_hash, resolution, release_date, sitename) into torrent_meta."""
+    """Bulk upsert (info_hash, title, resolution, release_date, sitename) into torrent_meta."""
     if not tuples:
         return
     with conn.cursor() as cur:
