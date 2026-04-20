@@ -7,6 +7,7 @@ import random
 import time
 
 import db
+import meta_extract
 from scraper_utils import BASE_URL, make_session, parse_page
 
 logging.basicConfig(
@@ -48,6 +49,7 @@ def run(start_url: str | None = None):
             for row in rows:
                 row["source"] = "browse"
             db.upsert_torrents(conn, rows)
+            meta_extract.upsert_torrent_meta(conn, rows)
             total_upserted += len(rows)
             log.info("Page %d: upserted %d rows (total so far: %d)", page_num, len(rows), total_upserted)
 

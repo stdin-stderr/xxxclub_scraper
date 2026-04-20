@@ -7,6 +7,7 @@ import random
 import time
 
 import db
+import meta_extract
 from scraper_utils import BASE_URL, make_session, parse_page, parse_top100_page
 
 logging.basicConfig(
@@ -62,6 +63,7 @@ def poll_once(session, conn) -> int:
         for row in rows:
             row["source"] = "watcher"
         db.upsert_torrents(conn, rows)
+        meta_extract.upsert_torrent_meta(conn, rows)
         total += len(rows)
         log.info("Upserted %d row(s) from %s (%d new)", len(rows), url, new_count)
 

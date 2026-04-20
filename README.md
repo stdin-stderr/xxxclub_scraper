@@ -107,3 +107,13 @@ To resume after an interruption:
 ```bash
 docker compose exec xxxclub_scraper python import_all.py --cursor [last url from logfile]
 ```
+
+## Re-extracting torrent metadata
+
+After the database is populated (or when the extraction logic in `meta_extract.py` changes), re-run extraction over all existing rows:
+
+```bash
+docker compose exec xxxclub_scraper python meta_extract.py
+```
+
+This processes all torrents in batches of 500 and logs progress. Safe to re-run at any time — it upserts, so existing rows are overwritten with fresh values.

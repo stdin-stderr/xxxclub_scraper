@@ -2,6 +2,8 @@ import os
 from datetime import datetime, timezone
 from urllib.parse import quote_plus, urlencode
 
+from datetime import date
+
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment
@@ -20,6 +22,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   h1 { font-size: 1.2em; margin-bottom: 12px; }
   form { margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   input[type=text] { background: #222; color: #ddd; border: 1px solid #444; padding: 4px 8px; font-family: monospace; font-size: 14px; width: 260px; }
+  input[type=date] { background: #222; color: #ddd; border: 1px solid #444; padding: 4px 8px; font-family: monospace; font-size: 14px; }
   select { background: #222; color: #ddd; border: 1px solid #444; padding: 4px 6px; font-family: monospace; font-size: 14px; }
   button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 14px; font-family: monospace; font-size: 14px; cursor: pointer; }
   button:hover { background: #444; }
@@ -49,6 +52,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .scene-tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
   .scene-tags span { font-size: 10px; background: #1e2a1e; color: #7c7; border: 1px solid #334; padding: 1px 5px; border-radius: 2px; }
   .scene-desc { font-size: 11px; color: #666; margin-top: 3px; max-width: 480px; line-height: 1.4; }
+  .site-link { color: #a8d; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -63,6 +67,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </div>
 <form method="GET" action="/">
   <input type="text" name="q" value="{{ q }}" placeholder="Search title…">
+  <input type="text" name="site" value="{{ site }}" placeholder="Filter by site…">
+  <input type="date" name="date_from" value="{{ date_from }}" title="Release date from">
+  <input type="date" name="date_to" value="{{ date_to }}" title="Release date to">
   <select name="category">
     <option value="">All categories</option>
     {% for cat in categories %}
@@ -70,7 +77,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     {% endfor %}
   </select>
   <select name="sort_by">
-    {% for col, label in [("date_added","Date Added"),("seeders","Seeders"),("leechers","Leechers"),("title","Title"),("size_bytes","Size")] %}
+    {% for col, label in [("date_added","Date Added"),("release_date","Release Date"),("seeders","Seeders"),("leechers","Leechers"),("title","Title"),("size_bytes","Size")] %}
     <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -92,7 +99,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr>
       <th></th>
       <th>Title</th>
+      <th>Site</th>
+      <th>Release</th>
       <th>Category</th>
+      <th>Res</th>
       <th>Size</th>
       <th>Seeders</th>
       <th>Leechers</th>
@@ -129,7 +139,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="scene-desc">{{ t.scene_description[:200] }}{% if t.scene_description | length > 200 %}…{% endif %}</div>
         {% endif %}
       </td>
+      <td>
+        {% if t.sitename %}
+        <a href="/?site={{ t.sitename | urlencode }}" class="site-link">{{ t.sitename }}</a>
+        {% endif %}
+      </td>
+      <td class="muted">{{ t.release_date.isoformat() if t.release_date else "" }}</td>
       <td>{{ t.category or "" }}</td>
+      <td class="muted">{{ t.resolution or "" }}</td>
       <td>{{ t.size_human }}</td>
       <td>{{ t.seeders if t.seeders is not none else "" }}</td>
       <td>{{ t.leechers if t.leechers is not none else "" }}</td>
@@ -202,6 +219,9 @@ VALID_PER_PAGE = {25, 50, 100}
 @app.get("/", response_class=HTMLResponse)
 def index(
     q: str = Query(default=""),
+    site: str = Query(default=""),
+    date_from: str = Query(default="2020-01-01"),
+    date_to: str = Query(default=""),
     category: str = Query(default=""),
     sort_by: str = Query(default="date_added"),
     sort_order: str = Query(default="desc"),
@@ -210,15 +230,22 @@ def index(
 ):
     limit = per_page if per_page in VALID_PER_PAGE else 25
     offset = (page - 1) * limit
+    effective_date_to = date_to or date.today().isoformat()
 
     conn = db.get_connection()
     try:
         categories = db.list_categories(conn)
-        total = db.count_torrents(conn, q or None, category or None)
+        total = db.count_torrents(
+            conn, q or None, category or None, site or None,
+            date_from or None, effective_date_to,
+        )
         torrents = db.search_torrents(
             conn,
             query=q or None,
             category=category or None,
+            site=site or None,
+            date_from=date_from or None,
+            date_to=effective_date_to,
             sort_by=sort_by,
             sort_order=sort_order,
             limit=limit,
@@ -232,7 +259,10 @@ def index(
         t["date_label"] = format_date(t["date_added"])
 
     total_pages = max(1, (total + limit - 1) // limit)
-    base_args = {"q": q, "category": category, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit}
+    base_args = {
+        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "category": category, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
+    }
 
     env = Environment(autoescape=True)
     env.filters["urlencode"] = quote_plus
@@ -241,6 +271,9 @@ def index(
         torrents=torrents,
         categories=categories,
         q=q,
+        site=site,
+        date_from=date_from,
+        date_to=date_to,
         selected_category=category,
         sort_by=sort_by,
         sort_order=sort_order,

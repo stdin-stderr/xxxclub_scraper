@@ -7,18 +7,19 @@ load_dotenv()
 
 CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS torrents (
-    info_hash   TEXT PRIMARY KEY,
-    title       TEXT,
-    magnet      TEXT NOT NULL,
-    size_bytes  BIGINT,
-    category    TEXT,
-    date_added  TIMESTAMPTZ,
-    uploader    TEXT,
-    seeders     INT,
-    leechers    INT,
-    source      TEXT,
-    image_url   TEXT,
-    scraped_at  TIMESTAMPTZ DEFAULT NOW()
+    info_hash              TEXT PRIMARY KEY,
+    title                  TEXT,
+    magnet                 TEXT NOT NULL,
+    size_bytes             BIGINT,
+    category               TEXT,
+    date_added             TIMESTAMPTZ,
+    uploader               TEXT,
+    seeders                INT,
+    leechers               INT,
+    source                 TEXT,
+    image_url              TEXT,
+    scraped_at             TIMESTAMPTZ DEFAULT NOW(),
+    metadata_attempted_at  TIMESTAMPTZ
 );
 """
 
@@ -52,17 +53,16 @@ CREATE TABLE IF NOT EXISTS torrent_scenes (
 );
 """
 
-ALTER_META_ATTEMPTED = """
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'torrents' AND column_name = 'metadata_attempted_at'
-    ) THEN
-        ALTER TABLE torrents ADD COLUMN metadata_attempted_at TIMESTAMPTZ;
-    END IF;
-END $$;
+CREATE_TORRENT_META = """
+CREATE TABLE IF NOT EXISTS torrent_meta (
+    info_hash    TEXT PRIMARY KEY REFERENCES torrents(info_hash) ON DELETE CASCADE,
+    resolution   TEXT,
+    release_date DATE,
+    sitename     TEXT,
+    extracted_at TIMESTAMPTZ DEFAULT NOW()
+);
 """
+
 
 UPSERT = """
 INSERT INTO torrents
@@ -91,7 +91,10 @@ COLS = (
     "scraped_at",
 )
 
-ALLOWED_SORT_COLS = {"seeders", "leechers", "date_added", "title", "size_bytes"}
+ALLOWED_SORT_COLS = {"seeders", "leechers", "date_added", "title", "size_bytes", "release_date"}
+
+# Columns that live on torrent_meta rather than torrents
+_META_SORT_COLS = {"release_date"}
 
 
 def get_connection():
@@ -109,7 +112,7 @@ def init_schema(conn):
         cur.execute(CREATE_TABLE)
         cur.execute(CREATE_SCENES)
         cur.execute(CREATE_TORRENT_SCENES)
-        cur.execute(ALTER_META_ATTEMPTED)
+        cur.execute(CREATE_TORRENT_META)
     conn.commit()
 
 
@@ -168,16 +171,36 @@ def list_categories(conn) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
-def count_torrents(conn, query: str | None = None, category: str | None = None) -> int:
+def count_torrents(
+    conn,
+    query: str | None = None,
+    category: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
     """Count rows matching the given filters."""
-    sql = "SELECT COUNT(*) FROM torrents WHERE TRUE"
+    needs_meta = site or date_from or date_to
+    sql = "SELECT COUNT(*) FROM torrents t"
+    if needs_meta:
+        sql += " LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash"
+    sql += " WHERE TRUE"
     params: list = []
     if query:
-        sql += " AND title ILIKE %s"
+        sql += " AND t.title ILIKE %s"
         params.append(f"%{query}%")
     if category:
-        sql += " AND category = %s"
+        sql += " AND t.category = %s"
         params.append(category)
+    if site:
+        sql += " AND tm.sitename ILIKE %s"
+        params.append(f"%{site}%")
+    if date_from:
+        sql += " AND tm.release_date >= %s"
+        params.append(date_from)
+    if date_to:
+        sql += " AND tm.release_date <= %s"
+        params.append(date_to)
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
@@ -187,28 +210,34 @@ def search_torrents(
     conn,
     query: str | None = None,
     category: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     sort_by: str = "seeders",
     sort_order: str = "desc",
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict]:
     """Search torrents with optional filters, sorting, and pagination.
-    Includes scene metadata when available."""
+    Includes scene metadata and torrent_meta when available."""
     if sort_by not in ALLOWED_SORT_COLS:
         sort_by = "seeders"
     sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    order_col = f"tm.{sort_by}" if sort_by in _META_SORT_COLS else f"t.{sort_by}"
 
     sql = (
         "SELECT t.info_hash, t.title, t.magnet, t.size_bytes, t.category, "
         "t.date_added, t.uploader, t.seeders, t.leechers, t.source, t.image_url, t.scraped_at, "
         "s.title AS scene_title, s.description AS scene_description, "
         "s.poster_url, s.site_name, s.site_logo_url, "
-        "s.network_name, s.network_logo_url, s.performers, s.tags "
+        "s.network_name, s.network_logo_url, s.performers, s.tags, "
+        "tm.sitename, tm.resolution, tm.release_date "
         "FROM torrents t "
         "LEFT JOIN LATERAL ("
         "  SELECT scene_id FROM torrent_scenes WHERE info_hash = t.info_hash LIMIT 1"
         ") ts ON true "
         "LEFT JOIN scenes s ON s.id = ts.scene_id "
+        "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
         "WHERE TRUE"
     )
     params: list = []
@@ -218,7 +247,16 @@ def search_torrents(
     if category:
         sql += " AND t.category = %s"
         params.append(category)
-    sql += f" ORDER BY t.{sort_by} {sort_order} NULLS LAST"
+    if site:
+        sql += " AND tm.sitename ILIKE %s"
+        params.append(f"%{site}%")
+    if date_from:
+        sql += " AND tm.release_date >= %s"
+        params.append(date_from)
+    if date_to:
+        sql += " AND tm.release_date <= %s"
+        params.append(date_to)
+    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST"
     sql += " LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
@@ -310,6 +348,26 @@ def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
         )
         cols = [desc[0] for desc in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+UPSERT_META = """
+INSERT INTO torrent_meta (info_hash, resolution, release_date, sitename)
+VALUES %s
+ON CONFLICT (info_hash) DO UPDATE SET
+    resolution   = EXCLUDED.resolution,
+    release_date = EXCLUDED.release_date,
+    sitename     = EXCLUDED.sitename,
+    extracted_at = NOW();
+"""
+
+
+def upsert_torrent_meta(conn, tuples: list[tuple]):
+    """Bulk upsert (info_hash, resolution, release_date, sitename) into torrent_meta."""
+    if not tuples:
+        return
+    with conn.cursor() as cur:
+        execute_values(cur, UPSERT_META, tuples)
+    conn.commit()
 
 
 def upsert_torrents(conn, rows: list[dict]):
