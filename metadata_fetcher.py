@@ -16,7 +16,7 @@ _log = logging.getLogger(__name__)
 
 METADATA_INTERVAL = int(os.environ.get("METADATA_INTERVAL", 300))
 PORNDB_API_KEY = os.environ.get("PORNDB_API_KEY", "")
-METADATA_MIN_SCORE = float(os.environ.get("METADATA_MIN_SCORE", "0.6"))
+METADATA_MIN_SCORE = float(os.environ.get("METADATA_MIN_SCORE", "0.65"))
 
 
 class PornDBClient:
@@ -160,7 +160,7 @@ def score_match(torrent: dict, scene: dict) -> tuple[float, float, float, float]
 
     # Weights — redistribute date weight to title if no date available
     if has_date:
-        title_w, site_w, date_w = 0.5, 0.3, 0.2
+        title_w, site_w, date_w = 0.35, 0.25, 0.4
     else:
         title_w, site_w, date_w = 0.7, 0.3, 0.0
 
@@ -215,19 +215,25 @@ def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False
         if not candidates and sitename and date_str:
             candidates = client.search_scenes(search_title, site=sitename, date=date_str)
             if candidates:
-                print(f"         pass 1 (site+date): {len(candidates)} candidates", flush=True)
+                print(f"         pass 1 (site+date+title): {len(candidates)} candidates", flush=True)
 
-        # Pass 2: site + title
+        # Pass 2: site + date only (title may be a performer name or otherwise unhelpful)
+        if not candidates and sitename and date_str:
+            candidates = client.search_scenes(sitename, site=sitename, date=date_str)
+            if candidates:
+                print(f"         pass 2 (site+date): {len(candidates)} candidates", flush=True)
+
+        # Pass 3: site + title
         if not candidates and sitename:
             candidates = client.search_scenes(search_title, site=sitename)
             if candidates:
-                print(f"         pass 2 (site): {len(candidates)} candidates", flush=True)
+                print(f"         pass 3 (site+title): {len(candidates)} candidates", flush=True)
 
-        # Pass 3: global
+        # Pass 4: global
         if not candidates:
             candidates = client.search_scenes(search_title)
             if candidates:
-                print(f"         pass 3 (global): {len(candidates)} candidates", flush=True)
+                print(f"         pass 4 (global): {len(candidates)} candidates", flush=True)
 
         if candidates:
             best, score = _best_candidate(torrent, candidates, METADATA_MIN_SCORE)

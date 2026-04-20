@@ -97,7 +97,7 @@ docker compose up -d
 | `WEB_PORT` | `5000` | Port the web UI listens on |
 | `PORNDB_API_KEY` | _(unset)_ | ThePornDB API key; metadata fetcher is disabled if absent |
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
-| `METADATA_MIN_SCORE` | `0.6` | Minimum match score (0.0–1.0); lower = more matches, higher = fewer false positives |
+| `METADATA_MIN_SCORE` | `0.65` | Minimum match score (0.0–1.0); lower = more matches, higher = fewer false positives |
 
 ## Web UI
 

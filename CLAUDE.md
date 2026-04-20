@@ -111,7 +111,7 @@ docker compose exec db psql -U xxxclub_scraper -d xxxclub -c \
 | `MAX_PAGES` | `10` | Max browse pages per watcher poll |
 | `PORNDB_API_KEY` | _(unset)_ | Enables ThePornDB metadata fetcher |
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
-| `METADATA_MIN_SCORE` | `0.6` | Minimum composite score to accept a TPDB match |
+| `METADATA_MIN_SCORE` | `0.65` | Minimum composite score to accept a TPDB match |
 
 ## Useful queries
 
