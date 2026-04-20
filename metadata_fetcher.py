@@ -189,13 +189,34 @@ def _best_candidate(torrent: dict, candidates: list[dict], min_score: float) -> 
     return None, best_score
 
 
-def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False):
-    torrents = db.fetch_unmatched(conn, limit=limit)
+def run_once(
+    conn,
+    client: PornDBClient,
+    limit: int = 100,
+    dry_run: bool = False,
+    torrents: list[dict] | None = None,
+    force: bool = False,
+):
+    """Process torrents for metadata lookup.
+
+    If `torrents` is provided (from --hashes-file), those rows are used directly and
+    any existing torrent_scenes links are removed when no match is found.
+    Otherwise fetches unmatched torrents from the database up to `limit`.
+    `force` is ignored when `torrents` is passed explicitly.
+    """
+    if torrents is None:
+        torrents = db.fetch_unmatched(conn, limit=limit)
+        rematch_mode = False
+    else:
+        rematch_mode = True
+
     if not torrents:
-        _log.debug("No unmatched torrents to process.")
+        _log.debug("No torrents to process.")
         return
 
     label = " (dry run)" if dry_run else ""
+    if rematch_mode:
+        label = f" [rematch]{label}"
     print(f"Processing {len(torrents)} torrents{label}...", flush=True)
     matched = 0
 
@@ -235,6 +256,7 @@ def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False
             if candidates:
                 print(f"         pass 4 (global): {len(candidates)} candidates", flush=True)
 
+        no_match = False
         if candidates:
             best, score = _best_candidate(torrent, candidates, METADATA_MIN_SCORE)
             if best and best.get("id"):
@@ -250,10 +272,16 @@ def run_once(conn, client: PornDBClient, limit: int = 100, dry_run: bool = False
                     db.link_torrent_scene(conn, info_hash, best["id"], match_score=score)
             else:
                 print(f"         NO MATCH (best score={score:.2f} < {METADATA_MIN_SCORE})", flush=True)
+                no_match = True
         else:
             print("         NO RESULTS", flush=True)
+            no_match = True
 
         if not dry_run:
+            if rematch_mode and no_match:
+                deleted = db.unlink_torrent_scenes(conn, info_hash)
+                if deleted:
+                    print(f"         removed {deleted} existing scene link(s)", flush=True)
             db.mark_metadata_attempted(conn, info_hash)
         time.sleep(0.5)
 
@@ -284,6 +312,12 @@ if __name__ == "__main__":
     parser.add_argument("--limit", type=int, default=100, help="Max torrents to process (default 100)")
     parser.add_argument("--all", action="store_true", help="Re-attempt all (reset metadata_attempted_at first)")
     parser.add_argument("--dry-run", action="store_true", help="Query ThePornDB and print matches without writing to DB")
+    parser.add_argument(
+        "--hashes-file",
+        metavar="FILE",
+        help="Path to a file with one info_hash per line; fetches data from DB, "
+             "removes existing scene links when no match is found",
+    )
     args = parser.parse_args()
 
     api_key = PORNDB_API_KEY
@@ -295,13 +329,22 @@ if __name__ == "__main__":
     conn = db.get_connection()
     print("Connected.", flush=True)
 
-    if args.all:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE torrents SET metadata_attempted_at = NULL")
-        conn.commit()
-        _log.info("Reset metadata_attempted_at for all torrents.")
-
     try:
-        run_once(conn, client, limit=args.limit, dry_run=args.dry_run)
+        if args.hashes_file:
+            with open(args.hashes_file) as fh:
+                hashes = [line.strip() for line in fh if line.strip()]
+            print(f"Read {len(hashes)} hashes from {args.hashes_file}", flush=True)
+            torrents = db.fetch_by_hashes(conn, hashes)
+            skipped = len(hashes) - len(torrents)
+            if skipped:
+                print(f"Skipped {skipped} hash(es) not found in database", flush=True)
+            run_once(conn, client, dry_run=args.dry_run, torrents=torrents)
+        else:
+            if args.all:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE torrents SET metadata_attempted_at = NULL")
+                conn.commit()
+                _log.info("Reset metadata_attempted_at for all torrents.")
+            run_once(conn, client, limit=args.limit, dry_run=args.dry_run)
     finally:
         conn.close()

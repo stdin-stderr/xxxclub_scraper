@@ -332,6 +332,40 @@ def mark_metadata_attempted(conn, info_hash: str):
     conn.commit()
 
 
+def unlink_torrent_scenes(conn, info_hash: str) -> int:
+    """Remove all scene links for a torrent. Returns number of rows deleted."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM torrent_scenes WHERE info_hash = %s",
+            (info_hash,),
+        )
+        deleted = cur.rowcount
+    conn.commit()
+    return deleted
+
+
+def fetch_by_hashes(conn, hashes: list[str]) -> list[dict]:
+    """Return torrent + torrent_meta rows for the given info hashes.
+    Hashes not present in the database are silently skipped.
+    Returns same shape as fetch_unmatched."""
+    if not hashes:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.info_hash, t.title,
+                   tm.title AS meta_title, tm.sitename, tm.release_date
+            FROM torrents t
+            LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash
+            WHERE t.info_hash = ANY(%s)
+            ORDER BY t.date_added DESC NULLS LAST
+            """,
+            (hashes,),
+        )
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
 def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
     """Return up to `limit` torrents that need a metadata lookup attempt.
 
