@@ -74,20 +74,73 @@ def _str(val) -> str | None:
     return str(val)
 
 
-def _performer_image(p: dict) -> str:
-    posters = p.get("posters") or []
-    if posters:
-        return _str(posters[0].get("url") or posters[0]) or ""
-    return _str(p.get("image")) or ""
+def _extract_performer(p: dict) -> dict:
+    """Extract canonical performer data from a ThePornDB performer object (uses parent record)."""
+    parent = p.get("parent") or {}
+    extras = parent.get("extras") or {}
+    return {
+        "uuid":              parent.get("id"),
+        "slug":              parent.get("slug"),
+        "name":              parent.get("name") or p.get("name", ""),
+        "full_name":         parent.get("full_name"),
+        "bio":               parent.get("bio") or None,
+        "gender":            extras.get("gender"),
+        "birthday":          extras.get("birthday"),
+        "birthplace":        extras.get("birthplace"),
+        "birthplace_code":   extras.get("birthplace_code"),
+        "ethnicity":         extras.get("ethnicity"),
+        "nationality":       extras.get("nationality"),
+        "hair_colour":       extras.get("hair_colour"),
+        "eye_colour":        extras.get("eye_colour"),
+        "height":            extras.get("height"),
+        "weight":            extras.get("weight"),
+        "measurements":      extras.get("measurements"),
+        "cupsize":           extras.get("cupsize"),
+        "fake_boobs":        extras.get("fake_boobs"),
+        "career_start_year": extras.get("career_start_year"),
+        "career_end_year":   extras.get("career_end_year"),
+        "rating":            parent.get("rating"),
+        "image_url":         _str(parent.get("image")),
+        "thumbnail_url":     _str(parent.get("thumbnail")),
+        "face_url":          _str(parent.get("face")),
+        "links":             extras.get("links") or {},
+    }
+
+
+def _extract_site(site: dict) -> dict | None:
+    """Extract site and nested network data from a ThePornDB site object."""
+    if not site:
+        return None
+    network = site.get("network") or {}
+    return {
+        "uuid":        site.get("uuid"),
+        "tpdb_id":     site.get("id"),
+        "slug":        site.get("short_name"),
+        "name":        site.get("name"),
+        "url":         site.get("url"),
+        "description": site.get("description"),
+        "rating":      site.get("rating"),
+        "logo_url":    site.get("logo"),
+        "favicon_url": site.get("favicon"),
+        "poster_url":  site.get("poster"),
+        "network": {
+            "uuid":        network.get("uuid"),
+            "tpdb_id":     network.get("id"),
+            "slug":        network.get("short_name"),
+            "name":        network.get("name"),
+            "url":         network.get("url"),
+            "rating":      network.get("rating"),
+            "logo_url":    network.get("logo"),
+            "favicon_url": network.get("favicon"),
+            "poster_url":  network.get("poster"),
+        } if network.get("uuid") else None,
+    }
 
 
 def _extract_scene(raw: dict) -> dict:
-    site = raw.get("site") or {}
-    network = site.get("network") or {}
-    performers = [
-        {"name": p.get("name", ""), "image_url": _performer_image(p)}
-        for p in (raw.get("performers") or [])
-    ]
+    site = _extract_site(raw.get("site") or {})
+    network = site.get("network") if site else None
+    performers = [_extract_performer(p) for p in (raw.get("performers") or [])]
     tags = [t.get("name", "") for t in (raw.get("tags") or []) if t.get("name")]
     return {
         "id": _str(raw.get("slug")) or str(raw.get("_id", "")),
@@ -97,13 +150,16 @@ def _extract_scene(raw: dict) -> dict:
         "background_url": _str(raw.get("background")),
         "date": _str(raw.get("date")),
         "duration_seconds": raw.get("duration"),
-        "site_name": _str(site.get("name")),
-        "site_slug": _str(site.get("slug")),
-        "site_logo_url": _str(site.get("logo")),
-        "network_name": _str(network.get("name")),
-        "network_slug": _str(network.get("slug")),
-        "network_logo_url": _str(network.get("logo")),
+        # Denormalized convenience fields kept on scenes for fast queries
+        "site_name":        site.get("name") if site else None,
+        "site_slug":        site.get("slug") if site else None,
+        "site_logo_url":    site.get("logo_url") if site else None,
+        "site_uuid":        site.get("uuid") if site else None,
+        "network_name":     network.get("name") if network else None,
+        "network_slug":     network.get("slug") if network else None,
+        "network_logo_url": network.get("logo_url") if network else None,
         "performers": performers,
+        "site": site,
         "tags": tags,
     }
 

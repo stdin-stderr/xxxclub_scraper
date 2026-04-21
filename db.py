@@ -23,6 +23,36 @@ CREATE TABLE IF NOT EXISTS torrents (
 );
 """
 
+CREATE_NETWORKS = """
+CREATE TABLE IF NOT EXISTS networks (
+    uuid         TEXT PRIMARY KEY,
+    tpdb_id      INT UNIQUE,
+    slug         TEXT,
+    name         TEXT NOT NULL,
+    url          TEXT,
+    rating       REAL,
+    logo_url     TEXT,
+    favicon_url  TEXT,
+    poster_url   TEXT
+);
+"""
+
+CREATE_SITES = """
+CREATE TABLE IF NOT EXISTS sites (
+    uuid         TEXT PRIMARY KEY,
+    tpdb_id      INT UNIQUE,
+    slug         TEXT,
+    name         TEXT NOT NULL,
+    url          TEXT,
+    description  TEXT,
+    rating       REAL,
+    logo_url     TEXT,
+    favicon_url  TEXT,
+    poster_url   TEXT,
+    network_uuid TEXT REFERENCES networks(uuid) ON DELETE SET NULL
+);
+"""
+
 CREATE_SCENES = """
 CREATE TABLE IF NOT EXISTS scenes (
     id               TEXT PRIMARY KEY,
@@ -35,6 +65,7 @@ CREATE TABLE IF NOT EXISTS scenes (
     site_name        TEXT,
     site_slug        TEXT,
     site_logo_url    TEXT,
+    site_uuid        TEXT REFERENCES sites(uuid) ON DELETE SET NULL,
     network_name     TEXT,
     network_slug     TEXT,
     network_logo_url TEXT,
@@ -65,6 +96,56 @@ CREATE TABLE IF NOT EXISTS torrent_meta (
 );
 """
 
+CREATE_PERFORMERS = """
+CREATE TABLE IF NOT EXISTS performers (
+    uuid              TEXT PRIMARY KEY,
+    slug              TEXT,
+    name              TEXT NOT NULL,
+    full_name         TEXT,
+    bio               TEXT,
+    gender            TEXT,
+    birthday          DATE,
+    birthplace        TEXT,
+    birthplace_code   TEXT,
+    ethnicity         TEXT,
+    nationality       TEXT,
+    hair_colour       TEXT,
+    eye_colour        TEXT,
+    height            TEXT,
+    weight            TEXT,
+    measurements      TEXT,
+    cupsize           TEXT,
+    fake_boobs        BOOLEAN,
+    career_start_year INT,
+    career_end_year   INT,
+    rating            REAL,
+    image_url         TEXT,
+    thumbnail_url     TEXT,
+    face_url          TEXT,
+    links             JSONB,
+    fetched_at        TIMESTAMPTZ DEFAULT NOW()
+);
+"""
+
+CREATE_SCENE_PERFORMERS = """
+CREATE TABLE IF NOT EXISTS scene_performers (
+    scene_id       TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+    performer_uuid TEXT NOT NULL REFERENCES performers(uuid) ON DELETE CASCADE,
+    PRIMARY KEY (scene_id, performer_uuid)
+);
+"""
+
+CREATE_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_torrent_meta_sitename      ON torrent_meta(sitename);
+CREATE INDEX IF NOT EXISTS idx_torrent_meta_release_date  ON torrent_meta(release_date);
+CREATE INDEX IF NOT EXISTS idx_scenes_site_name           ON scenes(site_name);
+CREATE INDEX IF NOT EXISTS idx_scenes_date                ON scenes(date);
+CREATE INDEX IF NOT EXISTS idx_torrents_date_added        ON torrents(date_added);
+CREATE INDEX IF NOT EXISTS idx_torrent_scenes_scene_id    ON torrent_scenes(scene_id);
+CREATE INDEX IF NOT EXISTS idx_performers_name            ON performers(name text_pattern_ops);
+CREATE INDEX IF NOT EXISTS idx_scene_performers_performer ON scene_performers(performer_uuid);
+CREATE INDEX IF NOT EXISTS idx_scenes_site_uuid           ON scenes(site_uuid);
+"""
 
 UPSERT = """
 INSERT INTO torrents
@@ -114,9 +195,14 @@ def get_connection():
 def init_schema(conn):
     with conn.cursor() as cur:
         cur.execute(CREATE_TABLE)
+        cur.execute(CREATE_NETWORKS)
+        cur.execute(CREATE_SITES)
         cur.execute(CREATE_SCENES)
         cur.execute(CREATE_TORRENT_SCENES)
         cur.execute(CREATE_TORRENT_META)
+        cur.execute(CREATE_PERFORMERS)
+        cur.execute(CREATE_SCENE_PERFORMERS)
+        cur.execute(CREATE_INDEXES)
     conn.commit()
 
 
@@ -276,6 +362,7 @@ def count_scenes(
     site: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    performer: str | None = None,
 ) -> int:
     """Count distinct scenes that have at least one linked torrent."""
     sql = (
@@ -298,6 +385,13 @@ def count_scenes(
     if date_to:
         sql += " AND s.date <= %s"
         params.append(date_to)
+    if performer:
+        sql += (
+            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
+            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
+            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
+        )
+        params.append(f"%{performer}%")
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
@@ -311,11 +405,11 @@ def search_scenes(
     date_to: str | None = None,
     sort_by: str = "date",
     sort_order: str = "desc",
-    limit: int = 25,
+    limit: int = 30,
     offset: int = 0,
+    performer: str | None = None,
 ) -> list[dict]:
-    """Return scenes that have at least one linked torrent, with torrents aggregated as JSON.
-    Only scenes with linked torrents are returned (INNER JOIN on torrent_scenes)."""
+    """Return scenes that have at least one linked torrent, with torrents and performers aggregated as JSON."""
     if sort_by not in ALLOWED_SCENE_SORT_COLS:
         sort_by = "date"
     sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
@@ -327,7 +421,15 @@ def search_scenes(
         "s.date, s.duration_seconds, "
         "s.site_name, s.site_logo_url, "
         "s.network_name, s.network_logo_url, "
-        "s.performers, s.tags, "
+        "s.tags, "
+        "(SELECT COALESCE(json_agg(json_build_object("
+        "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
+        "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
+        "    'gender', p.gender"
+        "  ) ORDER BY p.name), '[]'::json)"
+        "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
+        "  WHERE sp.scene_id = s.id"
+        ") AS performers, "
         "json_agg(json_build_object("
         "  'info_hash', t.info_hash,"
         "  'title', t.title,"
@@ -360,6 +462,13 @@ def search_scenes(
     if date_to:
         sql += " AND s.date <= %s"
         params.append(date_to)
+    if performer:
+        sql += (
+            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
+            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
+            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
+        )
+        params.append(f"%{performer}%")
     # GROUP BY PK — PostgreSQL infers functional dependency for other columns
     sql += " GROUP BY s.id"
     sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
@@ -372,21 +481,126 @@ def search_scenes(
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def upsert_scene(conn, scene: dict):
-    """Insert or update a ThePornDB scene."""
+def _sync_scene_performers(conn, scene_id: str, performers: list[dict]):
+    """Upsert performers and rebuild scene_performers links for a single scene."""
     with conn.cursor() as cur:
+        for p in performers:
+            uuid = p.get("uuid")
+            name = (p.get("name") or "").strip()
+            if not uuid or not name:
+                continue
+            cur.execute(
+                """
+                INSERT INTO performers (
+                    uuid, slug, name, full_name, bio, gender, birthday,
+                    birthplace, birthplace_code, ethnicity, nationality,
+                    hair_colour, eye_colour, height, weight, measurements,
+                    cupsize, fake_boobs, career_start_year, career_end_year,
+                    rating, image_url, thumbnail_url, face_url, links, fetched_at
+                ) VALUES (
+                    %(uuid)s, %(slug)s, %(name)s, %(full_name)s, %(bio)s, %(gender)s, %(birthday)s,
+                    %(birthplace)s, %(birthplace_code)s, %(ethnicity)s, %(nationality)s,
+                    %(hair_colour)s, %(eye_colour)s, %(height)s, %(weight)s, %(measurements)s,
+                    %(cupsize)s, %(fake_boobs)s, %(career_start_year)s, %(career_end_year)s,
+                    %(rating)s, %(image_url)s, %(thumbnail_url)s, %(face_url)s, %(links)s, NOW()
+                )
+                ON CONFLICT (uuid) DO UPDATE SET
+                    slug              = COALESCE(EXCLUDED.slug, performers.slug),
+                    name              = EXCLUDED.name,
+                    full_name         = COALESCE(EXCLUDED.full_name, performers.full_name),
+                    bio               = COALESCE(EXCLUDED.bio, performers.bio),
+                    gender            = COALESCE(EXCLUDED.gender, performers.gender),
+                    birthday          = COALESCE(EXCLUDED.birthday, performers.birthday),
+                    birthplace        = COALESCE(EXCLUDED.birthplace, performers.birthplace),
+                    birthplace_code   = COALESCE(EXCLUDED.birthplace_code, performers.birthplace_code),
+                    ethnicity         = COALESCE(EXCLUDED.ethnicity, performers.ethnicity),
+                    nationality       = COALESCE(EXCLUDED.nationality, performers.nationality),
+                    hair_colour       = COALESCE(EXCLUDED.hair_colour, performers.hair_colour),
+                    eye_colour        = COALESCE(EXCLUDED.eye_colour, performers.eye_colour),
+                    height            = COALESCE(EXCLUDED.height, performers.height),
+                    weight            = COALESCE(EXCLUDED.weight, performers.weight),
+                    measurements      = COALESCE(EXCLUDED.measurements, performers.measurements),
+                    cupsize           = COALESCE(EXCLUDED.cupsize, performers.cupsize),
+                    fake_boobs        = COALESCE(EXCLUDED.fake_boobs, performers.fake_boobs),
+                    career_start_year = COALESCE(EXCLUDED.career_start_year, performers.career_start_year),
+                    career_end_year   = COALESCE(EXCLUDED.career_end_year, performers.career_end_year),
+                    rating            = COALESCE(EXCLUDED.rating, performers.rating),
+                    image_url         = COALESCE(EXCLUDED.image_url, performers.image_url),
+                    thumbnail_url     = COALESCE(EXCLUDED.thumbnail_url, performers.thumbnail_url),
+                    face_url          = COALESCE(EXCLUDED.face_url, performers.face_url),
+                    links             = COALESCE(EXCLUDED.links, performers.links),
+                    fetched_at        = EXCLUDED.fetched_at
+                """,
+                {**p, "links": Json(p.get("links") or {})},
+            )
+            cur.execute(
+                "INSERT INTO scene_performers (scene_id, performer_uuid) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (scene_id, uuid),
+            )
+
+
+def upsert_scene(conn, scene: dict):
+    """Insert or update a ThePornDB scene, syncing normalized sites/networks/performers."""
+    site = scene.get("site") or {}
+    network = site.get("network") if site else None
+
+    with conn.cursor() as cur:
+        # Upsert network first (sites FK depends on it)
+        if network and network.get("uuid"):
+            cur.execute(
+                """
+                INSERT INTO networks (uuid, tpdb_id, slug, name, url, rating, logo_url, favicon_url, poster_url)
+                VALUES (%(uuid)s, %(tpdb_id)s, %(slug)s, %(name)s, %(url)s, %(rating)s,
+                        %(logo_url)s, %(favicon_url)s, %(poster_url)s)
+                ON CONFLICT (uuid) DO UPDATE SET
+                    tpdb_id     = COALESCE(EXCLUDED.tpdb_id, networks.tpdb_id),
+                    slug        = COALESCE(EXCLUDED.slug, networks.slug),
+                    name        = EXCLUDED.name,
+                    url         = COALESCE(EXCLUDED.url, networks.url),
+                    rating      = COALESCE(EXCLUDED.rating, networks.rating),
+                    logo_url    = COALESCE(EXCLUDED.logo_url, networks.logo_url),
+                    favicon_url = COALESCE(EXCLUDED.favicon_url, networks.favicon_url),
+                    poster_url  = COALESCE(EXCLUDED.poster_url, networks.poster_url)
+                """,
+                network,
+            )
+
+        # Upsert site
+        if site and site.get("uuid"):
+            cur.execute(
+                """
+                INSERT INTO sites (uuid, tpdb_id, slug, name, url, description, rating,
+                                   logo_url, favicon_url, poster_url, network_uuid)
+                VALUES (%(uuid)s, %(tpdb_id)s, %(slug)s, %(name)s, %(url)s, %(description)s, %(rating)s,
+                        %(logo_url)s, %(favicon_url)s, %(poster_url)s, %(network_uuid)s)
+                ON CONFLICT (uuid) DO UPDATE SET
+                    tpdb_id      = COALESCE(EXCLUDED.tpdb_id, sites.tpdb_id),
+                    slug         = COALESCE(EXCLUDED.slug, sites.slug),
+                    name         = EXCLUDED.name,
+                    description  = COALESCE(EXCLUDED.description, sites.description),
+                    url          = COALESCE(EXCLUDED.url, sites.url),
+                    rating       = COALESCE(EXCLUDED.rating, sites.rating),
+                    logo_url     = COALESCE(EXCLUDED.logo_url, sites.logo_url),
+                    favicon_url  = COALESCE(EXCLUDED.favicon_url, sites.favicon_url),
+                    poster_url   = COALESCE(EXCLUDED.poster_url, sites.poster_url),
+                    network_uuid = COALESCE(EXCLUDED.network_uuid, sites.network_uuid)
+                """,
+                {**site, "network_uuid": network.get("uuid") if network else None},
+            )
+
+        # Upsert the scene itself
         cur.execute(
             """
             INSERT INTO scenes (
                 id, title, description, poster_url, background_url, date,
-                duration_seconds, site_name, site_slug, site_logo_url,
+                duration_seconds, site_name, site_slug, site_logo_url, site_uuid,
                 network_name, network_slug, network_logo_url,
-                performers, tags, fetched_at
+                tags, fetched_at
             ) VALUES (
                 %(id)s, %(title)s, %(description)s, %(poster_url)s, %(background_url)s, %(date)s,
-                %(duration_seconds)s, %(site_name)s, %(site_slug)s, %(site_logo_url)s,
+                %(duration_seconds)s, %(site_name)s, %(site_slug)s, %(site_logo_url)s, %(site_uuid)s,
                 %(network_name)s, %(network_slug)s, %(network_logo_url)s,
-                %(performers)s, %(tags)s, NOW()
+                %(tags)s, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
                 title            = EXCLUDED.title,
@@ -398,16 +612,80 @@ def upsert_scene(conn, scene: dict):
                 site_name        = EXCLUDED.site_name,
                 site_slug        = EXCLUDED.site_slug,
                 site_logo_url    = EXCLUDED.site_logo_url,
+                site_uuid        = COALESCE(EXCLUDED.site_uuid, scenes.site_uuid),
                 network_name     = EXCLUDED.network_name,
                 network_slug     = EXCLUDED.network_slug,
                 network_logo_url = EXCLUDED.network_logo_url,
-                performers       = EXCLUDED.performers,
                 tags             = EXCLUDED.tags,
                 fetched_at       = NOW()
             """,
-            {**scene, "performers": Json(scene["performers"]), "tags": Json(scene["tags"])},
+            {**scene, "tags": Json(scene.get("tags") or [])},
         )
+
+    _sync_scene_performers(conn, scene["id"], scene.get("performers") or [])
     conn.commit()
+
+
+def list_sites(conn) -> list[dict]:
+    """Return all sites with network info, ordered by name."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT s.uuid, s.slug, s.name, s.url, s.description, s.rating,
+                   s.logo_url, s.favicon_url, s.poster_url,
+                   n.uuid AS network_uuid, n.name AS network_name, n.logo_url AS network_logo_url
+            FROM sites s
+            LEFT JOIN networks n ON n.uuid = s.network_uuid
+            ORDER BY s.name
+            """
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def count_performers(conn, query: str | None = None) -> int:
+    sql = "SELECT COUNT(*) FROM performers WHERE TRUE"
+    params: list = []
+    if query:
+        sql += " AND name ILIKE %s"
+        params.append(f"%{query}%")
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()[0]
+
+
+def list_performers(
+    conn,
+    query: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Return performers matching query, ordered by name."""
+    sql = (
+        "SELECT uuid, slug, name, full_name, gender, image_url, thumbnail_url, face_url, rating "
+        "FROM performers WHERE TRUE"
+    )
+    params: list = []
+    if query:
+        sql += " AND name ILIKE %s"
+        params.append(f"%{query}%")
+    sql += " ORDER BY name LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def get_performer(conn, uuid: str) -> dict | None:
+    """Return full performer record by UUID, or None if not found."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM performers WHERE uuid = %s", (uuid,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
 
 
 def link_torrent_scene(conn, info_hash: str, scene_id: str, match_score: float | None = None):

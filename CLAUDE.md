@@ -183,3 +183,24 @@ ORDER BY ts.match_score;
 -- Add match_score column (run once on existing databases)
 ALTER TABLE torrent_scenes ADD COLUMN IF NOT EXISTS match_score REAL;
 ```
+
+```sql
+-- Normalize sites/networks/performers (run migrate_normalize.sql first to populate tables)
+ALTER TABLE scenes ADD COLUMN IF NOT EXISTS site_uuid TEXT;
+
+-- After verifying scene_performers and performers are populated:
+ALTER TABLE scenes DROP COLUMN IF EXISTS performers;
+ALTER TABLE scenes
+    ADD CONSTRAINT fk_scenes_site_uuid
+    FOREIGN KEY (site_uuid) REFERENCES sites(uuid) ON DELETE SET NULL;
+
+-- After the metadata fetcher has cycled through all torrents, clean up synthetic
+-- md5-based performer records that have been replaced by real ThePornDB UUIDs:
+DELETE FROM performers p1
+WHERE p1.uuid = md5(p1.name)::text
+  AND EXISTS (
+    SELECT 1 FROM performers p2
+    WHERE p2.name = p1.name
+      AND p2.uuid != p1.uuid
+  );
+```
