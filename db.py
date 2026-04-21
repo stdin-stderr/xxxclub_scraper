@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS scene_performers (
 );
 """
 
+CREATE_EXTENSIONS = """
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+"""
+
 CREATE_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_torrent_meta_sitename      ON torrent_meta(sitename);
 CREATE INDEX IF NOT EXISTS idx_torrent_meta_release_date  ON torrent_meta(release_date);
@@ -145,6 +149,14 @@ CREATE INDEX IF NOT EXISTS idx_torrent_scenes_scene_id    ON torrent_scenes(scen
 CREATE INDEX IF NOT EXISTS idx_performers_name            ON performers(name text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_scene_performers_performer ON scene_performers(performer_uuid);
 CREATE INDEX IF NOT EXISTS idx_scenes_site_uuid           ON scenes(site_uuid);
+CREATE INDEX IF NOT EXISTS idx_scenes_title_trgm          ON scenes USING GIN (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_scenes_site_name_trgm      ON scenes USING GIN (site_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_torrents_title_trgm        ON torrents USING GIN (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_torrent_meta_sitename_trgm ON torrent_meta USING GIN (sitename gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_performers_name_trgm       ON performers USING GIN (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_sites_name_trgm            ON sites USING GIN (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_sites_description_trgm     ON sites USING GIN (description gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_networks_name_trgm         ON networks USING GIN (name gin_trgm_ops);
 """
 
 UPSERT = """
@@ -194,6 +206,7 @@ def get_connection():
 
 def init_schema(conn):
     with conn.cursor() as cur:
+        cur.execute(CREATE_EXTENSIONS)
         cur.execute(CREATE_TABLE)
         cur.execute(CREATE_NETWORKS)
         cur.execute(CREATE_SITES)
