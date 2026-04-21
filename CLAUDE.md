@@ -11,7 +11,36 @@ import_all.py      one-shot full backfill (all pages, newest → oldest)
 page_watcher.py    long-running service: polls browse + top100 on an interval
 meta_extract.py    regex extraction of site/date/title from torrent titles → torrent_meta
 metadata_fetcher.py  ThePornDB scene matching using torrent_meta structured fields
+api.py             generic REST API server (FastAPI, JSON); routes under /api/v1/
+web_ui.py          scene-first HTML frontend; calls api.py via HTTP (not db directly)
+entrypoint.py      starts watcher + metadata threads, then API server (thread) + web UI (main)
 ```
+
+### Web layer request flow
+
+```
+Browser → web_ui (WEB_PORT, default 5000)
+              └─ HTTP → api (API_PORT, default 5001)
+                            └─ psycopg2 → PostgreSQL
+```
+
+### API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/scenes` | Paginated scene search; params: q, site, date_from, date_to, sort_by, sort_order, per_page, page |
+| GET | `/api/v1/torrents` | Paginated torrent search; params: q, site, date_from, date_to, category, sort_by, sort_order, per_page, page |
+| GET | `/api/v1/categories` | List distinct torrent categories |
+
+All responses: `{ total, page, per_page, total_pages, items[] }` (or `{ categories[] }` for categories).
+
+### Web UI routes
+
+| Path | Description |
+|------|-------------|
+| `/` | Redirect → `/scenes` |
+| `/scenes` | Scene browser (primary / default landing) |
+| `/torrents` | Torrent search |
 
 ## Database
 
@@ -112,6 +141,14 @@ docker compose exec db psql -U xxxclub_scraper -d xxxclub -c \
 | `PORNDB_API_KEY` | _(unset)_ | Enables ThePornDB metadata fetcher |
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
 | `METADATA_MIN_SCORE` | `0.65` | Minimum composite score to accept a TPDB match |
+| `WATCHER` | _(unset)_ | Set to `true` to start the page watcher + metadata fetcher |
+| `API_SERVER` | _(unset)_ | Set to `true` to start the REST API server in entrypoint |
+| `WEB_UI` | _(unset)_ | Set to `true` to start the HTML web UI in entrypoint |
+| `API_PORT` | `5001` | Port the REST API server listens on |
+| `WEB_PORT` | `5000` | Port the web UI listens on |
+| `API_URL` | `http://localhost:{API_PORT}` | Base URL the web UI uses to reach the API |
+
+All three flags are independent — set any combination. `WATCHER` and web servers all run in the same process; web servers block the main thread (API in a background thread if both are set). When only `WEB_UI=true`, set `API_URL` to point at a running API server elsewhere. If no flags are set the process exits immediately.
 
 ## Useful queries
 

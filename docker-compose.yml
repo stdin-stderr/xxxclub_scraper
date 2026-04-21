@@ -26,5 +26,6 @@ services:
       POSTGRES_HOST: db
     ports:
       - "${WEB_PORT:-5000}:${WEB_PORT:-5000}"
+      - "${API_PORT:-5001}:${API_PORT:-5001}"
     restart: unless-stopped
 

@@ -4,11 +4,16 @@ Scrapes torrent metadata from xxxclub.to into a PostgreSQL database. Written in 
 
 ## How it works
 
-- **`page_watcher.py`** — long-running service, polls `/torrents/browse/all/` on a fixed interval, paginates forward through new entries and stops as soon as a known torrent is encountered (or `MAX_PAGES` pages)
-- **`import_all.py`** — one-shot full backfill, walks every page of the browse index from newest to oldest
-- **`web_ui.py`** — optional FastAPI web interface for searching and browsing the database
+Three independently toggleable components, all started via `entrypoint.py`:
 
-Both the watcher, the metadata fetcher, and the web UI run in the same container, started via `entrypoint.py`.
+- **Watcher** (`WATCHER=true`) — polls `/torrents/browse/all/` on a fixed interval; also runs the ThePornDB metadata fetcher when `PORNDB_API_KEY` is set
+- **API server** (`API_SERVER=true`) — generic FastAPI REST API (`/api/v1/scenes`, `/api/v1/torrents`, `/api/v1/categories`) that serves JSON from the database
+- **Web UI** (`WEB_UI=true`) — scene-first HTML frontend; fetches all data from the API server (set `API_URL` if the API runs elsewhere)
+
+One-shot tools:
+
+- **`import_all.py`** — full backfill, walks every page of the browse index from newest to oldest
+- **`meta_extract.py`** — re-extracts structured metadata (site, date, resolution) from all torrent titles
 
 ## Data stored per torrent
 
@@ -93,15 +98,21 @@ docker compose up -d
 | `BASE_URL` | `https://xxxclub.to` | Site base URL |
 | `SCRAPE_INTERVAL` | `3600` | Seconds between page watcher polls |
 | `MAX_PAGES` | `10` | Max pages to paginate per poll cycle |
-| `WEB_UI` | `false` | Set to `true` to enable the web UI |
+| `WATCHER` | `false` | Set to `true` to start the page watcher and metadata fetcher |
+| `API_SERVER` | `false` | Set to `true` to start the REST API server |
+| `WEB_UI` | `false` | Set to `true` to start the HTML web UI |
 | `WEB_PORT` | `5000` | Port the web UI listens on |
+| `API_PORT` | `5001` | Port the REST API server listens on |
+| `API_URL` | `http://localhost:{API_PORT}` | API base URL used by the web UI (override for remote API) |
 | `PORNDB_API_KEY` | _(unset)_ | ThePornDB API key; metadata fetcher is disabled if absent |
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
 | `METADATA_MIN_SCORE` | `0.65` | Minimum match score (0.0–1.0); lower = more matches, higher = fewer false positives |
 
 ## Web UI
 
-Set `WEB_UI=true` in `.env` and restart the container. The UI will be available at `http://localhost:5000` (or whichever `WEB_PORT` you set).
+Set `WEB_UI=true` and `API_SERVER=true` in `.env` and restart the container. The scene browser will be at `http://localhost:5000` and the API at `http://localhost:5001`.
+
+To run them in separate containers, set `API_URL=http://<api-host>:5001` in the web UI container's environment.
 
 Features:
 - Full-text search on title
