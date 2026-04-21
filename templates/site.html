@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }} — Sites{% endblock %}
+
+{% block extra_css %}
+  .site-header{display:flex;gap:24px;padding:24px 20px;align-items:flex-start;flex-wrap:wrap;border-bottom:1px solid #1e1e1e}
+  .site-logo-large{height:80px;width:auto;max-width:280px;border-radius:6px;object-fit:contain;background:#111;padding:8px;flex-shrink:0}
+  .site-no-logo{height:80px;width:140px;border-radius:6px;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:40px;color:#555;flex-shrink:0}
+  .site-info{flex:1;min-width:200px}
+  .site-name{font-size:26px;font-weight:700;color:#f1f1f1;margin-bottom:6px}
+  .site-network-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .site-network-logo{height:20px;width:auto;border-radius:2px}
+  .site-network-name{font-size:13px;color:#aaa;text-decoration:none}
+  .site-network-name:hover{color:#f1f1f1}
+  .site-url{font-size:13px;margin-bottom:10px}
+  .site-description{font-size:13px;color:#aaa;line-height:1.6;max-width:600px;margin-bottom:8px}
+  .site-rating{font-size:13px;color:#717171}
+  .section-header{padding:16px 20px 0;font-size:15px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
+{% endblock %}
+
+{% block content %}
+<div class="site-header">
+  {% if site.logo_url %}
+  <img class="site-logo-large" src="{{ site.logo_url }}" alt="{{ site.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+  <div class="site-no-logo" style="display:none">&#127916;</div>
+  {% else %}
+  <div class="site-no-logo">&#127916;</div>
+  {% endif %}
+
+  <div class="site-info">
+    <div class="site-name">{{ site.name }}</div>
+
+    {% if site.network_name %}
+    <div class="site-network-row">
+      {% if site.network_logo_url %}<img class="site-network-logo" src="{{ site.network_logo_url }}" alt="{{ site.network_name }}" onerror="this.style.display='none'">{% endif %}
+      <span style="font-size:12px;color:#717171">Part of</span>
+      <span class="site-network-name">{{ site.network_name }}</span>
+    </div>
+    {% endif %}
+
+    {% if site.url %}
+    <div class="site-url"><a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.url }}</a></div>
+    {% endif %}
+
+    {% if site.description %}
+    <div class="site-description">{{ site.description }}</div>
+    {% endif %}
+
+    {% if site.rating %}
+    <div class="site-rating">Rating: {{ "%.1f"|format(site.rating) }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section-header">{{ total }} scene{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
+
+{% if scenes %}
+<div class="grid">
+  {% for s in scenes %}
+  <div class="card" onclick="openModal({{ loop.index0 }})">
+    <div class="card-thumb">
+      {% set bg = s.background_url or s.poster_url %}
+      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% else %}<div class="no-img">No image</div>{% endif %}
+      {% if s.duration_human %}<div class="card-dur">{{ s.duration_human }}</div>{% endif %}
+    </div>
+    <div class="card-body">
+      <div class="card-title">{{ s.title or "(untitled)" }}</div>
+      {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
+      {% if s.description %}<div class="card-desc">{{ s.description }}</div>{% endif %}
+      <div class="card-meta">
+        <span>{{ s.date or "" }}</span>
+        {% if s.max_seeders %}<span class="card-seeds">{{ s.max_seeders }} seeds</span>{% endif %}
+      </div>
+      {% if s.torrents %}
+      <button class="card-dl-btn" onclick="event.stopPropagation();openModal({{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p style="padding:20px;color:#717171">No scenes found.</p>
+{% endif %}
+
+<div class="pagination">
+  {% if has_prev %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="disabled">&larr; Prev</span>{% endif %}
+  <span style="color:#717171">Page {{ page }} / {{ total_pages }}</span>
+  {% if has_next %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="disabled">Next &rarr;</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block scene_modal %}
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal" id="modal">
+    <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    <div class="modal-hero" id="modal-hero"><img id="modal-img" src="" alt=""></div>
+    <div class="modal-body">
+      <div class="modal-title" id="modal-title"></div>
+      <div class="modal-site-row">
+        <img class="modal-site-logo" id="modal-logo" src="" alt="">
+        <a class="modal-site-name" id="modal-site-name" href="#"></a>
+        <span class="modal-network" id="modal-network"></span>
+        <span class="modal-dur" id="modal-dur"></span>
+        <span class="modal-date" id="modal-date"></span>
+      </div>
+      <div class="modal-performers" id="modal-performers"></div>
+      <div class="modal-tags" id="modal-tags"></div>
+      <div class="modal-desc" id="modal-desc"></div>
+      <div class="modal-dl-heading" id="modal-dl-heading">Downloads</div>
+      <div class="modal-torrents" id="modal-torrents"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script id="scenes-data" type="application/json">{{ scenes_json | safe }}</script>
+<script>
+const scenes = JSON.parse(document.getElementById('scenes-data').textContent);
+
+function fmt(b) {
+  if (b == null) return '\u2014';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return b.toFixed(1) + '\u00a0' + u[i];
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openModal(idx) {
+  const s = scenes[idx];
+  const bg = s.background_url || s.poster_url || '';
+  const hero = document.getElementById('modal-hero');
+  const img = document.getElementById('modal-img');
+  if (bg) { img.src = bg; hero.style.display = ''; }
+  else { hero.style.display = 'none'; }
+
+  document.getElementById('modal-title').textContent = s.title || '(untitled)';
+
+  const logo = document.getElementById('modal-logo');
+  if (s.site_logo_url) { logo.src = s.site_logo_url; logo.style.display = ''; }
+  else { logo.style.display = 'none'; }
+
+  const siteLink = document.getElementById('modal-site-name');
+  siteLink.textContent = s.site_name || s.network_name || '';
+  siteLink.href = s.site_uuid
+    ? '/site/' + encodeURIComponent(s.site_uuid)
+    : '/scenes?site=' + encodeURIComponent(s.site_name || '');
+
+  document.getElementById('modal-network').textContent =
+    (s.network_name && s.network_name !== s.site_name) ? '/ ' + s.network_name : '';
+  document.getElementById('modal-dur').textContent = s.duration_human || '';
+  document.getElementById('modal-date').textContent = s.date || '';
+
+  const perf = document.getElementById('modal-performers');
+  perf.innerHTML = '';
+  if (s.performers && s.performers.length) {
+    s.performers.forEach(p => {
+      const chip = document.createElement('a');
+      chip.className = 'modal-performer';
+      chip.href = p.uuid ? '/performer/' + encodeURIComponent(p.uuid) : '#';
+      const img = document.createElement('img');
+      if (p.image_url) { img.src = p.image_url; }
+      else { img.style.background = '#333'; }
+      img.alt = p.name || '';
+      img.onerror = function() { this.style.display = 'none'; };
+      const name = document.createElement('span');
+      name.textContent = p.name || '';
+      chip.appendChild(img);
+      chip.appendChild(name);
+      perf.appendChild(chip);
+    });
+    perf.style.display = '';
+  } else { perf.style.display = 'none'; }
+
+  const tagsEl = document.getElementById('modal-tags');
+  tagsEl.innerHTML = '';
+  (s.tags || []).forEach(t => {
+    const sp = document.createElement('span');
+    sp.textContent = t;
+    tagsEl.appendChild(sp);
+  });
+
+  document.getElementById('modal-desc').textContent = s.description || '';
+
+  const dlH = document.getElementById('modal-dl-heading');
+  const dlEl = document.getElementById('modal-torrents');
+  if (s.torrents && s.torrents.length) {
+    dlH.style.display = '';
+    let html = '<table><thead><tr><th>Torrent</th><th>Cat</th><th>Res</th><th>Size</th><th>Seeds</th><th>Leech</th><th>Age</th></tr></thead><tbody>';
+    s.torrents.forEach(t => {
+      const sc = t.seeders > 0 ? ' class="seeds-good"' : '';
+      html += `<tr>
+        <td><a href="${esc(t.magnet)}" title="${esc(t.title)}">${esc(t.title)}</a></td>
+        <td>${esc(t.category||'')}</td>
+        <td style="color:#717171">${esc(t.resolution||'')}</td>
+        <td>${esc(fmt(t.size_bytes))}</td>
+        <td${sc}>${t.seeders != null ? t.seeders : ''}</td>
+        <td style="color:#717171">${t.leechers != null ? t.leechers : ''}</td>
+        <td style="color:#717171">${esc(t.age_label||'')}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    dlEl.innerHTML = html;
+  } else {
+    dlH.style.display = 'none';
+    dlEl.innerHTML = '';
+  }
+
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function closeModalOutside(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+{% endblock %}

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Media Library{% endblock %}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#0f0f0f;color:#f1f1f1}
+  a{color:#7af;text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ── Topbar ── */
+  .topbar{display:flex;align-items:center;gap:12px;padding:10px 20px;background:#161616;border-bottom:1px solid #272727;flex-wrap:wrap}
+  .topbar-brand{font-size:16px;font-weight:700;white-space:nowrap}
+  .topbar-brand a{color:#f1f1f1;text-decoration:none}
+  .topbar-nav{display:flex;gap:4px;align-items:center;margin-left:auto}
+  .topbar-nav a{color:#aaa;font-size:13px;padding:4px 10px;border-radius:4px;text-decoration:none;white-space:nowrap}
+  .topbar-nav a:hover,.topbar-nav a.active{background:#272727;color:#f1f1f1}
+  .topbar-nav .sep{color:#333;padding:0 2px}
+
+  /* ── Quickbar ── */
+  .quickbar{display:flex;gap:8px;padding:8px 20px;flex-wrap:wrap;align-items:center;font-size:13px;border-bottom:1px solid #1e1e1e}
+  .quickbar a{color:#aaa;background:#1e1e1e;border:1px solid #2e2e2e;padding:3px 10px;border-radius:16px;text-decoration:none;white-space:nowrap}
+  .quickbar a:hover{background:#2e2e2e;color:#f1f1f1}
+  .quickbar .sep{color:#333}
+
+  /* ── Search form ── */
+  .search-form{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1}
+  .search-form input[type=text]{background:#121212;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:6px 10px;font-size:13px;min-width:140px;flex:1;max-width:240px}
+  .search-form input[type=date]{background:#121212;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:6px 8px;font-size:13px}
+  .search-form select{background:#121212;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:6px 8px;font-size:13px}
+  .search-form button{background:#272727;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:6px 16px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .search-form button:hover{background:#3f3f3f}
+
+  /* ── Count bar ── */
+  .count-bar{padding:8px 20px;font-size:12px;color:#717171}
+
+  /* ── Scene card grid ── */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:16px 20px 40px}
+  .card{background:#161616;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;display:flex;flex-direction:column}
+  .card:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,0.6)}
+  .card-thumb{position:relative;width:100%;padding-top:56.25%;background:#222;flex-shrink:0}
+  .card-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .card-thumb .no-img{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#555;font-size:12px}
+  .card-dur{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,0.82);color:#fff;font-size:11px;font-weight:600;padding:1px 5px;border-radius:3px}
+  .card-body{padding:10px 12px 12px;display:flex;flex-direction:column;flex:1}
+  .card-site-logo{height:28px;width:auto;border-radius:2px;margin-bottom:5px;align-self:flex-start;max-width:100%}
+  .card-title{font-size:14px;font-weight:700;line-height:1.3;color:#f1f1f1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:4px}
+  .card-performers{font-size:11px;color:#7af;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card-desc{font-size:11px;color:#717171;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:6px}
+  .card-meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#717171;margin-top:auto}
+  .card-seeds{color:#4c4}
+  .card-dl-btn{margin-top:8px;width:100%;background:#272727;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:5px 0;font-size:12px;cursor:pointer;transition:background 0.1s}
+  .card-dl-btn:hover{background:#3f3f3f}
+
+  /* ── Scene modal ── */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:1000;overflow-y:auto;padding:32px 16px}
+  .modal-overlay.open{display:flex;justify-content:center;align-items:flex-start}
+  .modal{background:#161616;border-radius:10px;max-width:720px;width:100%;position:relative}
+  .modal-hero{width:100%;aspect-ratio:16/9;background:#222;overflow:hidden;border-radius:10px 10px 0 0}
+  .modal-hero img{width:100%;height:100%;object-fit:cover}
+  .modal-close{position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.72);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;line-height:1}
+  .modal-body{padding:16px 20px 22px}
+  .modal-title{font-size:19px;font-weight:700;line-height:1.3;margin-bottom:8px;color:#f1f1f1}
+  .modal-site-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+  .modal-site-logo{height:22px;border-radius:2px}
+  .modal-site-name{font-size:13px;font-weight:600;color:#ccc;text-decoration:none}
+  .modal-site-name:hover{color:#f1f1f1}
+  .modal-network{font-size:12px;color:#717171}
+  .modal-dur,.modal-date{font-size:12px;color:#717171}
+  .modal-date{margin-left:auto}
+  .modal-performers{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+  .modal-performer{display:flex;flex-direction:column;align-items:center;gap:4px;width:64px;color:inherit;text-decoration:none}
+  .modal-performer:hover span{color:#fff}
+  .modal-performer img{width:56px;height:56px;border-radius:50%;object-fit:cover;background:#2a2a2a;border:2px solid #2e2e2e}
+  .modal-performer span{font-size:10px;text-align:center;color:#7af;line-height:1.2;word-break:break-word}
+  .modal-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+  .modal-tags span{font-size:10px;background:#1e2a1e;color:#7c7;border:1px solid #2a4a2a;padding:2px 7px;border-radius:3px}
+  .modal-desc{font-size:13px;color:#aaa;line-height:1.5;margin-bottom:14px}
+  .modal-dl-heading{font-size:11px;font-weight:700;color:#717171;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .modal-torrents table{width:100%;border-collapse:collapse;font-size:12px}
+  .modal-torrents th{text-align:left;color:#555;padding:3px 6px;border-bottom:1px solid #2e2e2e;white-space:nowrap}
+  .modal-torrents td{padding:4px 6px;border-bottom:1px solid #1e1e1e;vertical-align:middle}
+  .modal-torrents tr:last-child td{border-bottom:none}
+  .modal-torrents a{color:#7af;text-decoration:none;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;display:inline-block;vertical-align:middle}
+  .modal-torrents a:hover{text-decoration:underline}
+  .seeds-good{color:#4c4}
+
+  /* ── Pagination ── */
+  .pagination{display:flex;gap:16px;align-items:center;padding:0 20px 24px;font-size:13px}
+  .pagination a{color:#7af;text-decoration:none}
+  .pagination a:hover{text-decoration:underline}
+  .pagination .disabled{color:#555;pointer-events:none}
+
+  {% block extra_css %}{% endblock %}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand"><a href="/scenes">&#9654; Library</a></div>
+  {% block topbar_form %}{% endblock %}
+  <nav class="topbar-nav">
+    <a href="/scenes"{% if active_page == 'scenes' %} class="active"{% endif %}>Scenes</a>
+    <a href="/torrents"{% if active_page == 'torrents' %} class="active"{% endif %}>Torrents</a>
+    <a href="/performers"{% if active_page == 'performers' %} class="active"{% endif %}>Performers</a>
+    <a href="/sites"{% if active_page == 'sites' %} class="active"{% endif %}>Sites</a>
+  </nav>
+</div>
+
+{% block content %}{% endblock %}
+
+{% block scene_modal %}{% endblock %}
+
+{% block scripts %}{% endblock %}
+
+</body>
+</html>
