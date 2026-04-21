@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Media Library API", version="1")
 
-VALID_PER_PAGE = {25, 50, 100}
+MAX_PER_PAGE = 250
 
 
 def _serial(obj):
@@ -42,7 +42,7 @@ def list_scenes(
     per_page: int = Query(default=25),
     page: int = Query(default=1, ge=1),
 ):
-    limit = per_page if per_page in VALID_PER_PAGE else 25
+    limit = max(1, min(per_page, MAX_PER_PAGE))
     offset = (page - 1) * limit
     effective_date_to = date_to or date.today().isoformat()
     conn = db.get_connection()
@@ -76,7 +76,7 @@ def list_torrents(
     per_page: int = Query(default=25),
     page: int = Query(default=1, ge=1),
 ):
-    limit = per_page if per_page in VALID_PER_PAGE else 25
+    limit = max(1, min(per_page, MAX_PER_PAGE))
     offset = (page - 1) * limit
     effective_date_to = date_to or date.today().isoformat()
     conn = db.get_connection()
