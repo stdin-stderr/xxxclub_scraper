@@ -319,7 +319,8 @@ def search_torrents(
         "SELECT t.info_hash, t.title, t.magnet, t.size_bytes, t.category, "
         "t.date_added, t.uploader, t.seeders, t.leechers, t.source, t.image_url, t.scraped_at, "
         "s.title AS scene_title, s.description AS scene_description, "
-        "s.background_url, s.poster_url, s.site_name, s.site_logo_url, "
+        "s.background_url, s.poster_url, s.site_name, "
+        "COALESCE(s.site_uuid, st.uuid) AS site_uuid, s.site_logo_url, "
         "s.network_name, s.network_logo_url, "
         "(SELECT COALESCE(json_agg(json_build_object("
         "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
@@ -337,6 +338,11 @@ def search_torrents(
         ") ts ON true "
         "LEFT JOIN scenes s ON s.id = ts.scene_id "
         "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
+        "LEFT JOIN LATERAL ("
+        "  SELECT uuid FROM sites"
+        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, tm.sitename, '')), ' ', '')"
+        "  LIMIT 1"
+        ") st ON true "
         "WHERE TRUE"
     )
     params: list = []
@@ -428,7 +434,7 @@ def search_scenes(
     sql = (
         "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
         "s.date, s.duration_seconds, "
-        "s.site_name, s.site_logo_url, "
+        "s.site_name, COALESCE(s.site_uuid, MAX(st.uuid)) AS site_uuid, s.site_logo_url, "
         "s.network_name, s.network_logo_url, "
         "s.tags, "
         "(SELECT COALESCE(json_agg(json_build_object("
@@ -451,6 +457,11 @@ def search_scenes(
         "  'date_added', t.date_added"
         ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
         "FROM scenes s "
+        "LEFT JOIN LATERAL ("
+        "  SELECT uuid FROM sites"
+        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '')"
+        "  LIMIT 1"
+        ") st ON true "
         "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
         "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
         "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
@@ -635,19 +646,24 @@ def upsert_scene(conn, scene: dict):
     conn.commit()
 
 
-def list_sites(conn) -> list[dict]:
-    """Return all sites with network info, ordered by name."""
+def list_sites(conn, query: str | None = None) -> list[dict]:
+    """Return sites with network info, optionally filtered by text query."""
+    sql = """
+        SELECT s.uuid, s.slug, s.name, s.url, s.description, s.rating,
+               s.logo_url, s.favicon_url, s.poster_url,
+               n.uuid AS network_uuid, n.name AS network_name, n.logo_url AS network_logo_url
+        FROM sites s
+        LEFT JOIN networks n ON n.uuid = s.network_uuid
+        WHERE TRUE
+    """
+    params: list = []
+    if query:
+        sql += " AND (s.name ILIKE %s OR COALESCE(s.description, '') ILIKE %s OR COALESCE(n.name, '') ILIKE %s)"
+        like = f"%{query}%"
+        params.extend([like, like, like])
+    sql += " ORDER BY s.name"
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT s.uuid, s.slug, s.name, s.url, s.description, s.rating,
-                   s.logo_url, s.favicon_url, s.poster_url,
-                   n.uuid AS network_uuid, n.name AS network_name, n.logo_url AS network_logo_url
-            FROM sites s
-            LEFT JOIN networks n ON n.uuid = s.network_uuid
-            ORDER BY s.name
-            """
-        )
+        cur.execute(sql, params)
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 

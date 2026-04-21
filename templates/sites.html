@@ -12,6 +12,13 @@
   .site-network img{height:14px;width:auto;border-radius:2px}
 {% endblock %}
 
+{% block topbar_form %}
+<form class="search-form" method="GET" action="/sites">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search sites…">
+  <button type="submit">Search</button>
+</form>
+{% endblock %}
+
 {% block content %}
 <div class="count-bar">{{ sites | length }} site{{ "s" if sites | length != 1 else "" }}</div>
 

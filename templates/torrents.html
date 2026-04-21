@@ -24,6 +24,8 @@
   .quickfilters a:hover { background: #2a2a2a; color: #ddd; text-decoration: none; }
   .quickfilters .sep { color: #444; align-self: center; }
   .scene-site { font-size: 11px; color: #888; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+  .scene-site a { color: inherit; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+  .scene-site a:hover { color: #ddd; }
   .scene-site img { height: 14px; width: auto; vertical-align: middle; }
   .scene-title { font-size: 12px; color: #aaa; margin-top: 2px; }
   .scene-performers { font-size: 11px; color: #7af; margin-top: 2px; }
@@ -104,9 +106,17 @@
         {% set display_site = t.site_name or t.network_name or t.sitename %}
         {% if display_site %}
         <div class="scene-site">
+          {% set site_href = "/site/" ~ t.site_uuid if t.site_uuid else None %}
           {% set logo = t.site_logo_url or t.network_logo_url %}
-          {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
-          {{ display_site }}
+          {% if site_href %}
+            <a href="{{ site_href }}">
+              {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
+              {{ display_site }}
+            </a>
+          {% else %}
+            {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
+            {{ display_site }}
+          {% endif %}
         </div>
         {% endif %}
         {% if t.performers %}
@@ -120,8 +130,13 @@
         {% endif %}
       </td>
       <td>
-        {% if t.sitename %}
-        <a href="/torrents?site={{ t.sitename | urlencode }}" class="site-link">{{ t.sitename }}</a>
+        {% set site_label = t.sitename or t.site_name %}
+        {% if site_label %}
+          {% if t.site_uuid %}
+        <a href="/site/{{ t.site_uuid }}" class="site-link">{{ site_label }}</a>
+          {% else %}
+        <span class="site-link">{{ site_label }}</span>
+          {% endif %}
         {% endif %}
       </td>
       <td class="muted">{{ t.release_date or "" }}</td>

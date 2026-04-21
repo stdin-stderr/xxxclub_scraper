@@ -2,11 +2,14 @@
 {% block title %}{{ site.name }} — Sites{% endblock %}
 
 {% block extra_css %}
-  .site-header{display:flex;gap:24px;padding:24px 20px;align-items:flex-start;flex-wrap:wrap;border-bottom:1px solid #1e1e1e}
-  .site-logo-large{height:80px;width:auto;max-width:280px;border-radius:6px;object-fit:contain;background:#111;padding:8px;flex-shrink:0}
-  .site-no-logo{height:80px;width:140px;border-radius:6px;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:40px;color:#555;flex-shrink:0}
-  .site-info{flex:1;min-width:200px}
-  .site-name{font-size:26px;font-weight:700;color:#f1f1f1;margin-bottom:6px}
+  .site-hero{position:relative;overflow:hidden;border-bottom:1px solid #1e1e1e;background-color:#0c0c10;background-position:center;background-size:cover}
+  .site-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,8,12,.24) 0,rgba(8,8,12,.46) 34%,rgba(8,8,12,.8) 72%,rgba(8,8,12,.98) 100%)}
+  .site-header{position:relative;z-index:1;display:flex;gap:28px;padding:170px 20px 28px;align-items:flex-end;flex-wrap:wrap}
+  .site-logo-wrap{min-width:220px;max-width:320px;min-height:120px;border-radius:24px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45);background:rgba(18,18,24,.88);border:1px solid rgba(255,255,255,.08);padding:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .site-logo-large{width:100%;max-height:120px;border-radius:8px;object-fit:contain;background:#111;padding:8px}
+  .site-no-logo{width:100%;min-height:84px;border-radius:10px;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:40px;color:#555}
+  .site-info{flex:1;min-width:260px;padding-top:16px}
+  .site-name{font-size:38px;line-height:1.05;font-weight:800;color:#f1f1f1;margin-bottom:8px;text-shadow:0 4px 18px rgba(0,0,0,.4)}
   .site-network-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
   .site-network-logo{height:20px;width:auto;border-radius:2px}
   .site-network-name{font-size:13px;color:#aaa;text-decoration:none}
@@ -15,39 +18,73 @@
   .site-description{font-size:13px;color:#aaa;line-height:1.6;max-width:600px;margin-bottom:8px}
   .site-rating{font-size:13px;color:#717171}
   .section-header{padding:16px 20px 0;font-size:15px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
+  @media (max-width: 780px){
+    .site-header{gap:20px;padding:144px 16px 22px}
+    .site-logo-wrap{min-width:180px;max-width:240px;min-height:96px;border-radius:20px;padding:14px}
+    .site-logo-large{max-height:90px}
+    .site-info{min-width:0;padding-top:8px}
+    .site-name{font-size:28px}
+  }
+  @media (max-width: 520px){
+    .site-header{display:block;padding-top:128px}
+    .site-logo-wrap{min-width:0;max-width:220px;margin-bottom:14px}
+    .site-name{font-size:24px}
+  }
+{% endblock %}
+
+{% block topbar_form %}
+<form class="search-form" method="GET" action="/site/{{ site.uuid }}">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search this site's scenes…">
+  <select name="per_page">
+    {% for n in [30, 60, 90] %}
+    <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }}/page</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Search</button>
+</form>
 {% endblock %}
 
 {% block content %}
-<div class="site-header">
-  {% if site.logo_url %}
-  <img class="site-logo-large" src="{{ site.logo_url }}" alt="{{ site.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-  <div class="site-no-logo" style="display:none">&#127916;</div>
-  {% else %}
-  <div class="site-no-logo">&#127916;</div>
-  {% endif %}
+{% set banner_sources = [] %}
+{% for s in scenes[:4] %}
+  {% set bg = s.background_url or s.poster_url %}
+  {% if bg %}{% set _ = banner_sources.append(bg) %}{% endif %}
+{% endfor %}
 
-  <div class="site-info">
-    <div class="site-name">{{ site.name }}</div>
-
-    {% if site.network_name %}
-    <div class="site-network-row">
-      {% if site.network_logo_url %}<img class="site-network-logo" src="{{ site.network_logo_url }}" alt="{{ site.network_name }}" onerror="this.style.display='none'">{% endif %}
-      <span style="font-size:12px;color:#717171">Part of</span>
-      <span class="site-network-name">{{ site.network_name }}</span>
+<div class="site-hero"{% if banner_sources %} style="background-image: linear-gradient(90deg, rgba(12,12,18,.6) 0, rgba(12,12,18,.1) 35%, rgba(12,12,18,.55) 100%), {% for bg in banner_sources %}url('{{ bg }}'){% if not loop.last %}, {% endif %}{% endfor %};"{% else %} style="background-image: radial-gradient(circle at top left,#26263d 0,#121217 45%,#0c0c10 100%);"{% endif %}>
+  <div class="site-header">
+    <div class="site-logo-wrap">
+      {% if site.logo_url %}
+      <img class="site-logo-large" src="{{ site.logo_url }}" alt="{{ site.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="site-no-logo" style="display:none">&#127916;</div>
+      {% else %}
+      <div class="site-no-logo">&#127916;</div>
+      {% endif %}
     </div>
-    {% endif %}
 
-    {% if site.url %}
-    <div class="site-url"><a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.url }}</a></div>
-    {% endif %}
+    <div class="site-info">
+      <div class="site-name">{{ site.name }}</div>
 
-    {% if site.description %}
-    <div class="site-description">{{ site.description }}</div>
-    {% endif %}
+      {% if site.network_name %}
+      <div class="site-network-row">
+        {% if site.network_logo_url %}<img class="site-network-logo" src="{{ site.network_logo_url }}" alt="{{ site.network_name }}" onerror="this.style.display='none'">{% endif %}
+        <span style="font-size:12px;color:#717171">Part of</span>
+        <span class="site-network-name">{{ site.network_name }}</span>
+      </div>
+      {% endif %}
 
-    {% if site.rating %}
-    <div class="site-rating">Rating: {{ "%.1f"|format(site.rating) }}</div>
-    {% endif %}
+      {% if site.url %}
+      <div class="site-url"><a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.url }}</a></div>
+      {% endif %}
+
+      {% if site.description %}
+      <div class="site-description">{{ site.description }}</div>
+      {% endif %}
+
+      {% if site.rating %}
+      <div class="site-rating">Rating: {{ "%.1f"|format(site.rating) }}</div>
+      {% endif %}
+    </div>
   </div>
 </div>
 
@@ -146,9 +183,11 @@ function openModal(idx) {
 
   const siteLink = document.getElementById('modal-site-name');
   siteLink.textContent = s.site_name || s.network_name || '';
-  siteLink.href = s.site_uuid
-    ? '/site/' + encodeURIComponent(s.site_uuid)
-    : '/scenes?site=' + encodeURIComponent(s.site_name || '');
+  if (s.site_uuid) {
+    siteLink.href = '/site/' + encodeURIComponent(s.site_uuid);
+  } else {
+    siteLink.removeAttribute('href');
+  }
 
   document.getElementById('modal-network').textContent =
     (s.network_name && s.network_name !== s.site_name) ? '/ ' + s.network_name : '';

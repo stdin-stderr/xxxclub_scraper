@@ -2,11 +2,14 @@
 {% block title %}{{ performer.name }} — Performers{% endblock %}
 
 {% block extra_css %}
-  .profile-header{display:flex;gap:24px;padding:24px 20px;align-items:flex-start;flex-wrap:wrap;border-bottom:1px solid #1e1e1e}
-  .profile-photo{width:160px;height:160px;border-radius:50%;object-fit:cover;background:#2a2a2a;border:3px solid #2e2e2e;flex-shrink:0}
-  .profile-no-photo{width:160px;height:160px;border-radius:50%;background:#2a2a2a;border:3px solid #2e2e2e;display:flex;align-items:center;justify-content:center;font-size:56px;color:#555;flex-shrink:0}
-  .profile-info{flex:1;min-width:200px}
-  .profile-name{font-size:26px;font-weight:700;color:#f1f1f1;margin-bottom:6px}
+  .performer-hero{position:relative;overflow:hidden;border-bottom:1px solid #1e1e1e;background-color:#0c0c10;background-position:center;background-size:cover}
+  .performer-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,8,12,.22) 0,rgba(8,8,12,.42) 34%,rgba(8,8,12,.78) 72%,rgba(8,8,12,.98) 100%)}
+  .profile-header{position:relative;z-index:1;display:flex;gap:28px;padding:180px 20px 28px;align-items:flex-end;flex-wrap:wrap}
+  .profile-photo-wrap{width:240px;height:240px;border-radius:28px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45);background:#1a1a20;border:1px solid rgba(255,255,255,.08);flex-shrink:0}
+  .profile-photo{width:100%;height:100%;object-fit:cover;background:#2a2a2a;display:block}
+  .profile-no-photo{width:100%;height:100%;background:#2a2a2a;display:flex;align-items:center;justify-content:center;font-size:84px;color:#555}
+  .profile-info{flex:1;min-width:260px;padding-top:18px}
+  .profile-name{font-size:38px;line-height:1.05;font-weight:800;color:#f1f1f1;margin-bottom:8px;text-shadow:0 4px 18px rgba(0,0,0,.4)}
   .profile-full-name{font-size:14px;color:#aaa;margin-bottom:12px}
   .profile-meta{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;color:#aaa;margin-bottom:12px}
   .profile-meta-item{display:flex;gap:5px}
@@ -16,52 +19,86 @@
   .profile-link{font-size:12px;color:#7af;background:#1a1a2e;border:1px solid #2a2a4e;padding:3px 10px;border-radius:3px;text-decoration:none;white-space:nowrap}
   .profile-link:hover{background:#2a2a4e;text-decoration:none}
   .section-header{padding:16px 20px 0;font-size:15px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
+  @media (max-width: 780px){
+    .profile-header{gap:20px;padding:148px 16px 22px}
+    .profile-photo-wrap{width:180px;height:180px;border-radius:22px}
+    .profile-no-photo{font-size:68px}
+    .profile-info{min-width:0;padding-top:8px}
+    .profile-name{font-size:28px}
+  }
+  @media (max-width: 520px){
+    .profile-header{display:block;padding-top:132px}
+    .profile-photo-wrap{width:160px;height:160px;margin-bottom:14px}
+    .profile-name{font-size:24px}
+  }
+{% endblock %}
+
+{% block topbar_form %}
+<form class="search-form" method="GET" action="/performer/{{ performer.uuid }}">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search this performer's scenes…">
+  <select name="per_page">
+    {% for n in [30, 60, 90] %}
+    <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }}/page</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Search</button>
+</form>
 {% endblock %}
 
 {% block content %}
-<div class="profile-header">
-  {% set photo = performer.thumbnail_url or performer.image_url %}
-  {% if photo %}
-  <img class="profile-photo" src="{{ photo }}" alt="{{ performer.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-  <div class="profile-no-photo" style="display:none">&#128100;</div>
-  {% else %}
-  <div class="profile-no-photo">&#128100;</div>
-  {% endif %}
+{% set banner_sources = [] %}
+{% for s in scenes[:4] %}
+  {% set bg = s.background_url or s.poster_url %}
+  {% if bg %}{% set _ = banner_sources.append(bg) %}{% endif %}
+{% endfor %}
 
-  <div class="profile-info">
-    <div class="profile-name">{{ performer.name }}</div>
-    {% if performer.full_name and performer.full_name != performer.name %}
-    <div class="profile-full-name">{{ performer.full_name }}</div>
-    {% endif %}
-
-    <div class="profile-meta">
-      {% if performer.gender %}<div class="profile-meta-item"><span class="profile-meta-label">Gender</span><span>{{ performer.gender }}</span></div>{% endif %}
-      {% if performer.birthday %}<div class="profile-meta-item"><span class="profile-meta-label">Born</span><span>{{ performer.birthday }}</span></div>{% endif %}
-      {% if performer.birthplace %}<div class="profile-meta-item"><span class="profile-meta-label">From</span><span>{{ performer.birthplace }}{% if performer.birthplace_code %} ({{ performer.birthplace_code }}){% endif %}</span></div>{% endif %}
-      {% if performer.ethnicity %}<div class="profile-meta-item"><span class="profile-meta-label">Ethnicity</span><span>{{ performer.ethnicity }}</span></div>{% endif %}
-      {% if performer.nationality %}<div class="profile-meta-item"><span class="profile-meta-label">Nationality</span><span>{{ performer.nationality }}</span></div>{% endif %}
-      {% if performer.hair_colour %}<div class="profile-meta-item"><span class="profile-meta-label">Hair</span><span>{{ performer.hair_colour }}</span></div>{% endif %}
-      {% if performer.eye_colour %}<div class="profile-meta-item"><span class="profile-meta-label">Eyes</span><span>{{ performer.eye_colour }}</span></div>{% endif %}
-      {% if performer.measurements %}<div class="profile-meta-item"><span class="profile-meta-label">Measurements</span><span>{{ performer.measurements }}{% if performer.cupsize %} ({{ performer.cupsize }}){% endif %}</span></div>{% endif %}
-      {% if performer.height %}<div class="profile-meta-item"><span class="profile-meta-label">Height</span><span>{{ performer.height }}</span></div>{% endif %}
-      {% if performer.weight %}<div class="profile-meta-item"><span class="profile-meta-label">Weight</span><span>{{ performer.weight }}</span></div>{% endif %}
-      {% if performer.career_start_year %}<div class="profile-meta-item"><span class="profile-meta-label">Career</span><span>{{ performer.career_start_year }}{% if performer.career_end_year %} – {{ performer.career_end_year }}{% endif %}</span></div>{% endif %}
-      {% if performer.rating %}<div class="profile-meta-item"><span class="profile-meta-label">Rating</span><span>{{ "%.1f"|format(performer.rating) }}</span></div>{% endif %}
-    </div>
-
-    {% if performer.bio %}
-    <div class="profile-bio">{{ performer.bio }}</div>
-    {% endif %}
-
-    {% if performer.links %}
-    <div class="profile-links">
-      {% for key, url in performer.links.items() %}
-      {% if url %}
-      <a class="profile-link" href="{{ url }}" target="_blank" rel="noopener">{{ key }}</a>
+<div class="performer-hero"{% if banner_sources %} style="background-image: linear-gradient(90deg, rgba(12,12,18,.6) 0, rgba(12,12,18,.1) 35%, rgba(12,12,18,.55) 100%), {% for bg in banner_sources %}url('{{ bg }}'){% if not loop.last %}, {% endif %}{% endfor %};"{% else %} style="background-image: radial-gradient(circle at top left,#26263d 0,#121217 45%,#0c0c10 100%);"{% endif %}>
+  <div class="profile-header">
+    {% set photo = performer.image_url or performer.thumbnail_url %}
+    <div class="profile-photo-wrap">
+      {% if photo %}
+      <img class="profile-photo" src="{{ photo }}" alt="{{ performer.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="profile-no-photo" style="display:none">&#128100;</div>
+      {% else %}
+      <div class="profile-no-photo">&#128100;</div>
       {% endif %}
-      {% endfor %}
     </div>
-    {% endif %}
+
+    <div class="profile-info">
+      <div class="profile-name">{{ performer.name }}</div>
+      {% if performer.full_name and performer.full_name != performer.name %}
+      <div class="profile-full-name">{{ performer.full_name }}</div>
+      {% endif %}
+
+      <div class="profile-meta">
+        {% if performer.gender %}<div class="profile-meta-item"><span class="profile-meta-label">Gender</span><span>{{ performer.gender }}</span></div>{% endif %}
+        {% if performer.birthday %}<div class="profile-meta-item"><span class="profile-meta-label">Born</span><span>{{ performer.birthday }}</span></div>{% endif %}
+        {% if performer.birthplace %}<div class="profile-meta-item"><span class="profile-meta-label">From</span><span>{{ performer.birthplace }}{% if performer.birthplace_code %} ({{ performer.birthplace_code }}){% endif %}</span></div>{% endif %}
+        {% if performer.ethnicity %}<div class="profile-meta-item"><span class="profile-meta-label">Ethnicity</span><span>{{ performer.ethnicity }}</span></div>{% endif %}
+        {% if performer.nationality %}<div class="profile-meta-item"><span class="profile-meta-label">Nationality</span><span>{{ performer.nationality }}</span></div>{% endif %}
+        {% if performer.hair_colour %}<div class="profile-meta-item"><span class="profile-meta-label">Hair</span><span>{{ performer.hair_colour }}</span></div>{% endif %}
+        {% if performer.eye_colour %}<div class="profile-meta-item"><span class="profile-meta-label">Eyes</span><span>{{ performer.eye_colour }}</span></div>{% endif %}
+        {% if performer.measurements %}<div class="profile-meta-item"><span class="profile-meta-label">Measurements</span><span>{{ performer.measurements }}{% if performer.cupsize %} ({{ performer.cupsize }}){% endif %}</span></div>{% endif %}
+        {% if performer.height %}<div class="profile-meta-item"><span class="profile-meta-label">Height</span><span>{{ performer.height }}</span></div>{% endif %}
+        {% if performer.weight %}<div class="profile-meta-item"><span class="profile-meta-label">Weight</span><span>{{ performer.weight }}</span></div>{% endif %}
+        {% if performer.career_start_year %}<div class="profile-meta-item"><span class="profile-meta-label">Career</span><span>{{ performer.career_start_year }}{% if performer.career_end_year %} – {{ performer.career_end_year }}{% endif %}</span></div>{% endif %}
+        {% if performer.rating %}<div class="profile-meta-item"><span class="profile-meta-label">Rating</span><span>{{ "%.1f"|format(performer.rating) }}</span></div>{% endif %}
+      </div>
+
+      {% if performer.bio %}
+      <div class="profile-bio">{{ performer.bio }}</div>
+      {% endif %}
+
+      {% if performer.links %}
+      <div class="profile-links">
+        {% for key, url in performer.links.items() %}
+        {% if url %}
+        <a class="profile-link" href="{{ url }}" target="_blank" rel="noopener">{{ key }}</a>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
   </div>
 </div>
 
@@ -78,8 +115,12 @@
     </div>
     <div class="card-body">
       {% if s.site_logo_url %}
-        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else "/scenes?site=" ~ (s.site_name | urlencode) %}
+        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else None %}
+        {% if site_href %}
         <a href="{{ site_href }}" onclick="event.stopPropagation()"><img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}"></a>
+        {% else %}
+        <img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}">
+        {% endif %}
       {% endif %}
       <div class="card-title">{{ s.title or "(untitled)" }}</div>
       {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
@@ -164,9 +205,11 @@ function openModal(idx) {
 
   const siteLink = document.getElementById('modal-site-name');
   siteLink.textContent = s.site_name || s.network_name || '';
-  siteLink.href = s.site_uuid
-    ? '/site/' + encodeURIComponent(s.site_uuid)
-    : '/scenes?site=' + encodeURIComponent(s.site_name || '');
+  if (s.site_uuid) {
+    siteLink.href = '/site/' + encodeURIComponent(s.site_uuid);
+  } else {
+    siteLink.removeAttribute('href');
+  }
 
   document.getElementById('modal-network').textContent =
     (s.network_name && s.network_name !== s.site_name) ? '/ ' + s.network_name : '';

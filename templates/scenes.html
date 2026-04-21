@@ -45,8 +45,12 @@
     </div>
     <div class="card-body">
       {% if s.site_logo_url %}
-        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else "/scenes?site=" ~ (s.site_name | urlencode) %}
+        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else None %}
+        {% if site_href %}
         <a href="{{ site_href }}" onclick="event.stopPropagation()"><img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}"></a>
+        {% else %}
+        <img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}">
+        {% endif %}
       {% endif %}
       <div class="card-title">{{ s.title or "(untitled)" }}</div>
       {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
@@ -133,9 +137,11 @@ function openModal(idx) {
 
   const siteLink = document.getElementById('modal-site-name');
   siteLink.textContent = s.site_name || s.network_name || '';
-  siteLink.href = s.site_uuid
-    ? '/site/' + encodeURIComponent(s.site_uuid)
-    : '/scenes?site=' + encodeURIComponent(s.site_name || '');
+  if (s.site_uuid) {
+    siteLink.href = '/site/' + encodeURIComponent(s.site_uuid);
+  } else {
+    siteLink.removeAttribute('href');
+  }
 
   document.getElementById('modal-network').textContent =
     (s.network_name && s.network_name !== s.site_name) ? '/ ' + s.network_name : '';

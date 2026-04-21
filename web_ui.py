@@ -214,6 +214,7 @@ def performers_ui(
 @app.get("/performer/{uuid}", response_class=HTMLResponse)
 def performer_ui(
     uuid: str,
+    q: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=30),
 ):
@@ -225,6 +226,7 @@ def performer_ui(
         raise
     limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
     data = _api_get("/api/v1/scenes", {
+        "q": q,
         "performer": performer["name"], "per_page": limit, "page": page,
         "sort_by": "date", "sort_order": "desc",
     })
@@ -233,12 +235,13 @@ def performer_ui(
     total_pages = data["total_pages"]
     _enrich_scenes(scenes)
 
-    base_args = {"per_page": limit}
+    base_args = {"q": q, "per_page": limit}
     return HTMLResponse(_render(
         "performer.html",
         active_page="performers",
         performer=performer, scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
+        q=q,
         per_page=limit, page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
         prev_url=page_url(f"/performer/{uuid}", base_args, page - 1),
@@ -247,11 +250,12 @@ def performer_ui(
 
 
 @app.get("/sites", response_class=HTMLResponse)
-def sites_ui():
-    data = _api_get("/api/v1/sites", {})
+def sites_ui(q: str = Query(default="")):
+    data = _api_get("/api/v1/sites", {"q": q})
     return HTMLResponse(_render(
         "sites.html",
         active_page="sites",
+        q=q,
         sites=data.get("sites", []),
     ))
 
@@ -259,6 +263,7 @@ def sites_ui():
 @app.get("/site/{uuid}", response_class=HTMLResponse)
 def site_ui(
     uuid: str,
+    q: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=30),
 ):
@@ -270,6 +275,7 @@ def site_ui(
         raise
     limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
     data = _api_get("/api/v1/scenes", {
+        "q": q,
         "site": site["name"], "per_page": limit, "page": page,
         "sort_by": "date", "sort_order": "desc",
     })
@@ -278,12 +284,13 @@ def site_ui(
     total_pages = data["total_pages"]
     _enrich_scenes(scenes)
 
-    base_args = {"per_page": limit}
+    base_args = {"q": q, "per_page": limit}
     return HTMLResponse(_render(
         "site.html",
         active_page="sites",
         site=site, scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
+        q=q,
         per_page=limit, page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
         prev_url=page_url(f"/site/{uuid}", base_args, page - 1),

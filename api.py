@@ -139,10 +139,10 @@ def list_categories():
 
 
 @app.get("/api/v1/sites")
-def list_sites():
+def list_sites(q: str = Query(default="")):
     conn = db.get_connection()
     try:
-        sites = db.list_sites(conn)
+        sites = db.list_sites(conn, q or None)
     finally:
         conn.close()
     return JSONResponse(content={"sites": _serial(sites)})
