@@ -233,7 +233,7 @@ def search_torrents(
         "SELECT t.info_hash, t.title, t.magnet, t.size_bytes, t.category, "
         "t.date_added, t.uploader, t.seeders, t.leechers, t.source, t.image_url, t.scraped_at, "
         "s.title AS scene_title, s.description AS scene_description, "
-        "s.poster_url, s.site_name, s.site_logo_url, "
+        "s.background_url, s.poster_url, s.site_name, s.site_logo_url, "
         "s.network_name, s.network_logo_url, s.performers, s.tags, "
         "tm.sitename, tm.title AS meta_title, tm.resolution, tm.release_date "
         "FROM torrents t "
