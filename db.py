@@ -260,7 +260,7 @@ def search_torrents(
     if date_to:
         sql += " AND tm.release_date <= %s"
         params.append(date_to)
-    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST"
+    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, t.info_hash ASC"
     sql += " LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
@@ -362,7 +362,7 @@ def search_scenes(
         params.append(date_to)
     # GROUP BY PK — PostgreSQL infers functional dependency for other columns
     sql += " GROUP BY s.id"
-    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST"
+    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
     sql += " LIMIT %s OFFSET %s"
     params.extend([limit, offset])
 
