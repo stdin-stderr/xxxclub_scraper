@@ -643,6 +643,28 @@ def list_sites(conn) -> list[dict]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def get_site(conn, uuid: str) -> dict | None:
+    """Return full site record with network info by UUID, or None if not found."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT s.uuid, s.tpdb_id, s.slug, s.name, s.url, s.description, s.rating,
+                   s.logo_url, s.favicon_url, s.poster_url,
+                   n.uuid AS network_uuid, n.name AS network_name,
+                   n.logo_url AS network_logo_url, n.url AS network_url
+            FROM sites s
+            LEFT JOIN networks n ON n.uuid = s.network_uuid
+            WHERE s.uuid = %s
+            """,
+            (uuid,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+
+
 def count_performers(conn, query: str | None = None) -> int:
     sql = "SELECT COUNT(*) FROM performers WHERE TRUE"
     params: list = []

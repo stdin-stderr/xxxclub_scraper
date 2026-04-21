@@ -148,6 +148,18 @@ def list_sites():
     return JSONResponse(content={"sites": _serial(sites)})
 
 
+@app.get("/api/v1/sites/{uuid}")
+def get_site(uuid: str):
+    conn = db.get_connection()
+    try:
+        s = db.get_site(conn, uuid)
+    finally:
+        conn.close()
+    if not s:
+        raise HTTPException(status_code=404, detail="Site not found")
+    return JSONResponse(content=_serial(s))
+
+
 @app.get("/api/v1/performers")
 def list_performers(
     q: str = Query(default=""),
