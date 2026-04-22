@@ -4,7 +4,7 @@ and upsert into the torrent_meta table."""
 import logging
 import re
 import time
-from datetime import date
+from datetime import date, datetime
 
 import db
 
@@ -35,6 +35,8 @@ _RE_DATE_DOTTED = re.compile(r"\b(\d{2})\.(\d{2})\.(\d{4})\b")
 _RE_DATE_SPACED_LONG = re.compile(r"\b(\d{2})\s+(\d{2})\s+(\d{4})\b")
 # YY MM DD (space-separated two-digit triplet)
 _RE_DATE_SPACED = re.compile(r"\b(\d{2})\s+(\d{2})\s+(\d{2})\b")
+# Standalone 4-digit year (1970-2099)
+_RE_YEAR_ONLY = re.compile(r"\b(19[7-9]\d|20\d\d)\b")
 
 _CATEGORY_RESOLUTION = {
     "SD": "480p",
@@ -92,6 +94,12 @@ def extract_date(title: str) -> date | None:
                 return date(2000 + yy, mm, dd)
             except ValueError:
                 pass
+
+    m = _RE_YEAR_ONLY.search(title)
+    if m:
+        yyyy = int(m.group(1))
+        if 1970 <= yyyy <= datetime.now().year:
+            return date(yyyy, 1, 1)
 
     return None
 
