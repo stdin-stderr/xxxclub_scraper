@@ -71,8 +71,15 @@ CREATE TABLE IF NOT EXISTS scenes (
     network_logo_url TEXT,
     performers       JSONB,
     tags             JSONB,
+    type             TEXT DEFAULT 'Scene',
+    format           TEXT,
     fetched_at       TIMESTAMPTZ DEFAULT NOW()
 );
+"""
+
+MIGRATE_SCENES_TYPE = """
+ALTER TABLE scenes ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'Scene';
+ALTER TABLE scenes ADD COLUMN IF NOT EXISTS format TEXT;
 """
 
 CREATE_TORRENT_SCENES = """
@@ -144,6 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_torrent_meta_sitename      ON torrent_meta(sitena
 CREATE INDEX IF NOT EXISTS idx_torrent_meta_release_date  ON torrent_meta(release_date);
 CREATE INDEX IF NOT EXISTS idx_scenes_site_name           ON scenes(site_name);
 CREATE INDEX IF NOT EXISTS idx_scenes_date                ON scenes(date);
+CREATE INDEX IF NOT EXISTS idx_scenes_type                ON scenes(type);
 CREATE INDEX IF NOT EXISTS idx_torrents_date_added        ON torrents(date_added);
 CREATE INDEX IF NOT EXISTS idx_torrent_scenes_scene_id    ON torrent_scenes(scene_id);
 CREATE INDEX IF NOT EXISTS idx_performers_name            ON performers(name text_pattern_ops);
@@ -211,6 +219,7 @@ def init_schema(conn):
         cur.execute(CREATE_NETWORKS)
         cur.execute(CREATE_SITES)
         cur.execute(CREATE_SCENES)
+        cur.execute(MIGRATE_SCENES_TYPE)
         cur.execute(CREATE_TORRENT_SCENES)
         cur.execute(CREATE_TORRENT_META)
         cur.execute(CREATE_PERFORMERS)
@@ -396,7 +405,7 @@ def count_scenes(
     sql = (
         "SELECT COUNT(DISTINCT s.id) FROM scenes s "
         "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
-        "WHERE TRUE"
+        "WHERE s.type = 'Scene'"
     )
     params: list = []
     if query:
@@ -425,6 +434,38 @@ def count_scenes(
         return cur.fetchone()[0]
 
 
+def count_movies(
+    conn,
+    query: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> int:
+    """Count distinct movies that have at least one linked torrent."""
+    sql = (
+        "SELECT COUNT(DISTINCT s.id) FROM scenes s "
+        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
+        "WHERE s.type = 'Movie'"
+    )
+    params: list = []
+    if query:
+        sql += " AND s.title ILIKE %s"
+        params.append(f"%{query}%")
+    if site:
+        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
+        params.append(f"%{site}%")
+        params.append(f"%{site.replace(' ', '')}%")
+    if date_from:
+        sql += " AND s.date >= %s"
+        params.append(date_from)
+    if date_to:
+        sql += " AND s.date <= %s"
+        params.append(date_to)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchone()[0]
+
+
 def search_scenes(
     conn,
     query: str | None = None,
@@ -446,7 +487,7 @@ def search_scenes(
 
     sql = (
         "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
-        "s.date, s.duration_seconds, "
+        "s.date, s.duration_seconds, s.type, s.format, "
         "s.site_name, COALESCE(s.site_uuid, MAX(st.uuid)) AS site_uuid, s.site_logo_url, "
         "s.network_name, s.network_logo_url, "
         "s.tags, "
@@ -478,7 +519,7 @@ def search_scenes(
         "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
         "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
         "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
-        "WHERE TRUE"
+        "WHERE s.type = 'Scene'"
     )
     params: list = []
     if query:
@@ -503,6 +544,84 @@ def search_scenes(
         )
         params.append(f"%{performer}%")
     # GROUP BY PK — PostgreSQL infers functional dependency for other columns
+    sql += " GROUP BY s.id"
+    sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
+    sql += " LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def search_movies(
+    conn,
+    query: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort_by: str = "date",
+    sort_order: str = "desc",
+    limit: int = 30,
+    offset: int = 0,
+) -> list[dict]:
+    """Return movies that have at least one linked torrent, with torrents and performers aggregated as JSON."""
+    if sort_by not in ALLOWED_SCENE_SORT_COLS:
+        sort_by = "date"
+    sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    order_col = "MAX(t.seeders)" if sort_by == "seeders" else f"s.{sort_by}"
+
+    sql = (
+        "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
+        "s.date, s.duration_seconds, s.type, s.format, "
+        "s.site_name, COALESCE(s.site_uuid, MAX(st.uuid)) AS site_uuid, s.site_logo_url, "
+        "s.network_name, s.network_logo_url, "
+        "s.tags, "
+        "(SELECT COALESCE(json_agg(json_build_object("
+        "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
+        "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
+        "    'gender', p.gender"
+        "  ) ORDER BY p.name), '[]'::json)"
+        "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
+        "  WHERE sp.scene_id = s.id"
+        ") AS performers, "
+        "json_agg(json_build_object("
+        "  'info_hash', t.info_hash,"
+        "  'title', t.title,"
+        "  'magnet', t.magnet,"
+        "  'size_bytes', t.size_bytes,"
+        "  'category', t.category,"
+        "  'seeders', t.seeders,"
+        "  'leechers', t.leechers,"
+        "  'resolution', tm.resolution,"
+        "  'date_added', t.date_added"
+        ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
+        "FROM scenes s "
+        "LEFT JOIN LATERAL ("
+        "  SELECT uuid FROM sites"
+        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '')"
+        "  LIMIT 1"
+        ") st ON true "
+        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
+        "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
+        "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
+        "WHERE s.type = 'Movie'"
+    )
+    params: list = []
+    if query:
+        sql += " AND s.title ILIKE %s"
+        params.append(f"%{query}%")
+    if site:
+        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
+        params.append(f"%{site}%")
+        params.append(f"%{site.replace(' ', '')}%")
+    if date_from:
+        sql += " AND s.date >= %s"
+        params.append(date_from)
+    if date_to:
+        sql += " AND s.date <= %s"
+        params.append(date_to)
     sql += " GROUP BY s.id"
     sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
     sql += " LIMIT %s OFFSET %s"
@@ -628,12 +747,12 @@ def upsert_scene(conn, scene: dict):
                 id, title, description, poster_url, background_url, date,
                 duration_seconds, site_name, site_slug, site_logo_url, site_uuid,
                 network_name, network_slug, network_logo_url,
-                tags, fetched_at
+                tags, type, format, fetched_at
             ) VALUES (
                 %(id)s, %(title)s, %(description)s, %(poster_url)s, %(background_url)s, %(date)s,
                 %(duration_seconds)s, %(site_name)s, %(site_slug)s, %(site_logo_url)s, %(site_uuid)s,
                 %(network_name)s, %(network_slug)s, %(network_logo_url)s,
-                %(tags)s, NOW()
+                %(tags)s, %(type)s, %(format)s, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
                 title            = EXCLUDED.title,
@@ -650,9 +769,13 @@ def upsert_scene(conn, scene: dict):
                 network_slug     = EXCLUDED.network_slug,
                 network_logo_url = EXCLUDED.network_logo_url,
                 tags             = EXCLUDED.tags,
+                type             = EXCLUDED.type,
+                format           = EXCLUDED.format,
                 fetched_at       = NOW()
             """,
-            {**scene, "tags": Json(scene.get("tags") or [])},
+            {**scene, "tags": Json(scene.get("tags") or []),
+             "type": scene.get("type") or "Scene",
+             "format": scene.get("format")},
         )
 
     _sync_scene_performers(conn, scene["id"], scene.get("performers") or [])
@@ -795,7 +918,7 @@ def fetch_by_hashes(conn, hashes: list[str]) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT t.info_hash, t.title,
+            SELECT t.info_hash, t.title, t.category,
                    tm.title AS meta_title, tm.sitename, tm.release_date
             FROM torrents t
             LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash
@@ -812,12 +935,12 @@ def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
     """Return up to `limit` torrents that need a metadata lookup attempt.
 
     Each row includes structured fields from torrent_meta (may be None if not yet extracted):
-    meta_title, sitename, release_date.
+    meta_title, sitename, release_date, category.
     """
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT t.info_hash, t.title,
+            SELECT t.info_hash, t.title, t.category,
                    tm.title AS meta_title, tm.sitename, tm.release_date
             FROM torrents t
             LEFT JOIN torrent_scenes ts ON ts.info_hash = t.info_hash

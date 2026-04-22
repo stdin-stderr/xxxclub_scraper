@@ -54,6 +54,31 @@ class PornDBClient:
             _log.warning("Request error: %s", exc)
             return []
 
+    def search_movies(
+        self,
+        parse: str,
+        site: str | None = None,
+        year: int | None = None,
+        per_page: int = 5,
+    ) -> list[dict]:
+        params: dict = {"parse": parse, "per_page": per_page}
+        if site:
+            params["site"] = site
+            params["site_operation"] = "Site/Network"
+        if year:
+            params["year"] = year
+        try:
+            r = self._session.get(f"{self.BASE}/movies", params=params, timeout=15)
+            r.raise_for_status()
+            return r.json().get("data", [])
+        except requests.HTTPError as exc:
+            _log.warning("HTTP %s searching movies (site=%s, parse=%s): %s",
+                         exc.response.status_code, site, parse, exc)
+            return []
+        except requests.RequestException as exc:
+            _log.warning("Request error: %s", exc)
+            return []
+
 
 def _str(val) -> str | None:
     if val is None:
@@ -150,6 +175,8 @@ def _extract_scene(raw: dict) -> dict:
         "background_url": _str(raw.get("background")),
         "date": _str(raw.get("date")),
         "duration_seconds": raw.get("duration"),
+        "type": raw.get("type") or "Scene",
+        "format": raw.get("format"),
         # Denormalized convenience fields kept on scenes for fast queries
         "site_name":        site.get("name") if site else None,
         "site_slug":        site.get("slug") if site else None,
@@ -206,11 +233,19 @@ def score_match(torrent: dict, scene: dict) -> tuple[float, float, float, float]
     if has_date and scene_date_str:
         try:
             scene_date = date.fromisoformat(scene_date_str[:10])
-            delta = abs((release_date - scene_date).days)
-            if delta == 0:
-                date_sim = 1.0
-            elif delta <= 30:
-                date_sim = 0.5
+            # Year-only extraction lands on Jan 1 — compare years only in that case
+            if release_date.month == 1 and release_date.day == 1:
+                year_delta = abs(release_date.year - scene_date.year)
+                if year_delta == 0:
+                    date_sim = 1.0
+                elif year_delta == 1:
+                    date_sim = 0.5
+            else:
+                delta = abs((release_date - scene_date).days)
+                if delta == 0:
+                    date_sim = 1.0
+                elif delta <= 30:
+                    date_sim = 0.5
         except ValueError:
             pass
 
@@ -287,30 +322,57 @@ def run_once(
         print(f"         meta: site={sitename!r}  title={search_title[:50]!r}  date={date_str}", flush=True)
 
         candidates: list[dict] = []
+        is_movie = (torrent.get("category") or "").lower() == "movies"
+        year = release_date.year if release_date else None
 
-        # Pass 1: site + date + title
-        if not candidates and sitename and date_str:
-            candidates = client.search_scenes(search_title, site=sitename, date=date_str)
-            if candidates:
-                print(f"         pass 1 (site+date+title): {len(candidates)} candidates", flush=True)
+        if is_movie:
+            # Pass 1: site + year + title
+            if not candidates and sitename and year:
+                candidates = client.search_movies(search_title, site=sitename, year=year)
+                if candidates:
+                    print(f"         pass 1 (movie site+year+title): {len(candidates)} candidates", flush=True)
 
-        # Pass 2: site + date only (title may be a performer name or otherwise unhelpful)
-        if not candidates and sitename and date_str:
-            candidates = client.search_scenes(sitename, site=sitename, date=date_str)
-            if candidates:
-                print(f"         pass 2 (site+date): {len(candidates)} candidates", flush=True)
+            # Pass 2: site + year only
+            if not candidates and sitename and year:
+                candidates = client.search_movies(sitename, site=sitename, year=year)
+                if candidates:
+                    print(f"         pass 2 (movie site+year): {len(candidates)} candidates", flush=True)
 
-        # Pass 3: site + title
-        if not candidates and sitename:
-            candidates = client.search_scenes(search_title, site=sitename)
-            if candidates:
-                print(f"         pass 3 (site+title): {len(candidates)} candidates", flush=True)
+            # Pass 3: site + title
+            if not candidates and sitename:
+                candidates = client.search_movies(search_title, site=sitename)
+                if candidates:
+                    print(f"         pass 3 (movie site+title): {len(candidates)} candidates", flush=True)
 
-        # Pass 4: global
-        if not candidates:
-            candidates = client.search_scenes(search_title)
-            if candidates:
-                print(f"         pass 4 (global): {len(candidates)} candidates", flush=True)
+            # Pass 4: global
+            if not candidates:
+                candidates = client.search_movies(search_title)
+                if candidates:
+                    print(f"         pass 4 (movie global): {len(candidates)} candidates", flush=True)
+        else:
+            # Pass 1: site + date + title
+            if not candidates and sitename and date_str:
+                candidates = client.search_scenes(search_title, site=sitename, date=date_str)
+                if candidates:
+                    print(f"         pass 1 (site+date+title): {len(candidates)} candidates", flush=True)
+
+            # Pass 2: site + date only (title may be a performer name or otherwise unhelpful)
+            if not candidates and sitename and date_str:
+                candidates = client.search_scenes(sitename, site=sitename, date=date_str)
+                if candidates:
+                    print(f"         pass 2 (site+date): {len(candidates)} candidates", flush=True)
+
+            # Pass 3: site + title
+            if not candidates and sitename:
+                candidates = client.search_scenes(search_title, site=sitename)
+                if candidates:
+                    print(f"         pass 3 (site+title): {len(candidates)} candidates", flush=True)
+
+            # Pass 4: global
+            if not candidates:
+                candidates = client.search_scenes(search_title)
+                if candidates:
+                    print(f"         pass 4 (global): {len(candidates)} candidates", flush=True)
 
         no_match = False
         if candidates:

@@ -143,6 +143,45 @@ def scenes_ui(
     ))
 
 
+@app.get("/movies", response_class=HTMLResponse)
+def movies_ui(
+    q: str = Query(default=""),
+    site: str = Query(default=""),
+    date_from: str = Query(default=""),
+    date_to: str = Query(default=""),
+    sort_by: str = Query(default="date"),
+    sort_order: str = Query(default="desc"),
+    per_page: int = Query(default=30),
+    page: int = Query(default=1, ge=1),
+):
+    limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
+    data = _api_get("/api/v1/movies", {
+        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
+    })
+    movies = data["items"]
+    total = data["total"]
+    total_pages = data["total_pages"]
+    _enrich_scenes(movies)
+
+    base_args = {
+        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
+    }
+    return HTMLResponse(_render(
+        "movies.html",
+        active_page="movies",
+        movies=movies,
+        movies_json=json.dumps(movies).replace("</", "<\\/"),
+        q=q, site=site, date_from=date_from, date_to=date_to,
+        sort_by=sort_by, sort_order=sort_order, per_page=limit,
+        page=page, total=total, total_pages=total_pages,
+        has_prev=page > 1, has_next=page < total_pages,
+        prev_url=page_url("/movies", base_args, page - 1),
+        next_url=page_url("/movies", base_args, page + 1),
+    ))
+
+
 @app.get("/torrents", response_class=HTMLResponse)
 def torrents_ui(
     q: str = Query(default=""),

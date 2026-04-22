@@ -102,6 +102,57 @@ def list_scenes(
     return JSONResponse(content=result)
 
 
+@app.get("/api/v1/movies")
+def list_movies(
+    q: str = Query(default=""),
+    site: str = Query(default=""),
+    date_from: str = Query(default=""),
+    date_to: str = Query(default=""),
+    sort_by: str = Query(default="date"),
+    sort_order: str = Query(default="desc"),
+    per_page: int = Query(default=30),
+    page: int = Query(default=1, ge=1),
+):
+    _validate_date(date_from, "date_from")
+    _validate_date(date_to, "date_to")
+    if sort_order.lower() not in ("asc", "desc"):
+        raise HTTPException(status_code=422, detail="sort_order must be 'asc' or 'desc'")
+    limit = max(1, min(per_page, MAX_PER_PAGE))
+    offset = (page - 1) * limit
+    effective_date_to = date_to or date.today().isoformat()
+    use_cache = not q
+    key = cache.make_key(
+        "movies", site=site,
+        date_from=date_from, date_to=effective_date_to,
+        sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
+    ) if use_cache else None
+    if use_cache and (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
+    conn = db.get_connection()
+    try:
+        total = db.count_movies(
+            conn, q or None, site or None, date_from or None, effective_date_to,
+        )
+        items = db.search_movies(
+            conn,
+            query=q or None,
+            site=site or None,
+            date_from=date_from or None,
+            date_to=effective_date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
+    finally:
+        conn.close()
+    total_pages = max(1, (total + limit - 1) // limit)
+    result = _serial({"total": total, "page": page, "per_page": limit, "total_pages": total_pages, "items": items})
+    if use_cache:
+        cache.cache_set(key, result, ttl=600)
+    return JSONResponse(content=result)
+
+
 @app.get("/api/v1/torrents")
 def list_torrents(
     q: str = Query(default=""),
