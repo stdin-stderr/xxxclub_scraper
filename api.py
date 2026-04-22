@@ -3,6 +3,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
+import cache
 import db
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -66,6 +67,14 @@ def list_scenes(
     limit = max(1, min(per_page, MAX_PER_PAGE))
     offset = (page - 1) * limit
     effective_date_to = date_to or date.today().isoformat()
+    use_cache = not q
+    key = cache.make_key(
+        "scenes", site=site, performer=performer,
+        date_from=date_from, date_to=effective_date_to,
+        sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
+    ) if use_cache else None
+    if use_cache and (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         total = db.count_scenes(
@@ -86,7 +95,11 @@ def list_scenes(
         )
     finally:
         conn.close()
-    return _paginated(items, total, page, limit)
+    total_pages = max(1, (total + limit - 1) // limit)
+    result = _serial({"total": total, "page": page, "per_page": limit, "total_pages": total_pages, "items": items})
+    if use_cache:
+        cache.cache_set(key, result, ttl=600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/torrents")
@@ -108,6 +121,14 @@ def list_torrents(
     limit = max(1, min(per_page, MAX_PER_PAGE))
     offset = (page - 1) * limit
     effective_date_to = date_to or date.today().isoformat()
+    use_cache = not q
+    key = cache.make_key(
+        "torrents", site=site, category=category,
+        date_from=date_from, date_to=effective_date_to,
+        sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
+    ) if use_cache else None
+    if use_cache and (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         total = db.count_torrents(
@@ -128,40 +149,64 @@ def list_torrents(
         )
     finally:
         conn.close()
-    return _paginated(items, total, page, limit)
+    total_pages = max(1, (total + limit - 1) // limit)
+    result = _serial({"total": total, "page": page, "per_page": limit, "total_pages": total_pages, "items": items})
+    if use_cache:
+        cache.cache_set(key, result, ttl=600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/categories")
 def list_categories():
+    key = cache.make_key("categories")
+    if (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         cats = db.list_categories(conn)
     finally:
         conn.close()
-    return JSONResponse(content={"categories": cats})
+    result = {"categories": cats}
+    cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/stats")
 def stats():
+    key = cache.make_key("stats")
+    if (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
-        return JSONResponse(content=_serial(db.get_stats(conn)))
+        result = _serial(db.get_stats(conn))
     finally:
         conn.close()
+    cache.cache_set(key, result, ttl=600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/sites")
 def list_sites(q: str = Query(default="")):
+    use_cache = not q
+    key = cache.make_key("sites") if use_cache else None
+    if use_cache and (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         sites = db.list_sites(conn, q or None)
     finally:
         conn.close()
-    return JSONResponse(content={"sites": _serial(sites)})
+    result = {"sites": _serial(sites)}
+    if use_cache:
+        cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/sites/{uuid}")
 def get_site(uuid: str):
+    key = cache.make_key("site", uuid=uuid)
+    if (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         s = db.get_site(conn, uuid)
@@ -169,7 +214,9 @@ def get_site(uuid: str):
         conn.close()
     if not s:
         raise HTTPException(status_code=404, detail="Site not found")
-    return JSONResponse(content=_serial(s))
+    result = _serial(s)
+    cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/performers")
@@ -180,17 +227,28 @@ def list_performers(
 ):
     limit = max(1, min(per_page, MAX_PER_PAGE))
     offset = (page - 1) * limit
+    use_cache = not q
+    key = cache.make_key("performers", limit=limit, offset=offset) if use_cache else None
+    if use_cache and (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         total = db.count_performers(conn, q or None)
         items = db.list_performers(conn, query=q or None, limit=limit, offset=offset)
     finally:
         conn.close()
-    return _paginated(items, total, page, limit)
+    total_pages = max(1, (total + limit - 1) // limit)
+    result = _serial({"total": total, "page": page, "per_page": limit, "total_pages": total_pages, "items": items})
+    if use_cache:
+        cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/v1/performers/{uuid}")
 def get_performer(uuid: str):
+    key = cache.make_key("performer", uuid=uuid)
+    if (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
     conn = db.get_connection()
     try:
         p = db.get_performer(conn, uuid)
@@ -198,7 +256,9 @@ def get_performer(uuid: str):
         conn.close()
     if not p:
         raise HTTPException(status_code=404, detail="Performer not found")
-    return JSONResponse(content=_serial(p))
+    result = _serial(p)
+    cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
 
 
 if __name__ == "__main__":

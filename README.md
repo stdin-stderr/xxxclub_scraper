@@ -107,6 +107,37 @@ docker compose up -d
 | `PORNDB_API_KEY` | _(unset)_ | ThePornDB API key; metadata fetcher is disabled if absent |
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
 | `METADATA_MIN_SCORE` | `0.65` | Minimum match score (0.0–1.0); lower = more matches, higher = fewer false positives |
+| `REDIS_URL` | _(unset)_ | Optional Redis URL (e.g. `redis://redis:6379`); enables API response caching |
+
+## Redis caching (optional)
+
+The API server supports optional Redis-backed response caching. When `REDIS_URL` is set, all read endpoints cache their results — repeated requests for the same parameters are served from Redis without hitting the database.
+
+A `redis` service is included in `docker-compose.yml` but not required. To enable it:
+
+1. Add `REDIS_URL=redis://redis:6379` to your `.env`
+2. Bring the stack up — the scraper will connect to Redis automatically
+
+```bash
+docker compose up -d
+```
+
+If `REDIS_URL` is not set, or if Redis is unreachable, the API falls back to querying the database on every request with no error.
+
+### What gets cached
+
+| Endpoint | TTL | Notes |
+|---|---|---|
+| `GET /api/v1/stats` | 10 min | Aggregate counts and timelines |
+| `GET /api/v1/categories` | 1 hour | Rarely changes |
+| `GET /api/v1/scenes` | 10 min | Skipped when `q` is set |
+| `GET /api/v1/torrents` | 10 min | Skipped when `q` is set |
+| `GET /api/v1/sites` | 1 hour | Skipped when `q` is set |
+| `GET /api/v1/sites/{uuid}` | 1 hour | Per-UUID key |
+| `GET /api/v1/performers` | 1 hour | Skipped when `q` is set |
+| `GET /api/v1/performers/{uuid}` | 1 hour | Per-UUID key |
+
+Free-text search requests (`q=...`) are never cached since they produce unique result sets per query.
 
 ## Web UI
 

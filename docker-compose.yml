@@ -15,12 +15,26 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   xxxclub_scraper:
     # build: .
     image: ghcr.io/stdin-stderr/xxxclub_scraper:latest
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+        required: false
     env_file: .env
     environment:
       POSTGRES_HOST: db
@@ -28,4 +42,3 @@ services:
       - "${WEB_PORT:-5000}:${WEB_PORT:-5000}"
       - "${API_PORT:-5001}:${API_PORT:-5001}"
     restart: unless-stopped
-

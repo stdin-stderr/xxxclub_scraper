@@ -144,6 +144,7 @@ docker compose exec db psql -U xxxclub_scraper -d xxxclub -c \
 | `WATCHER` | _(unset)_ | Set to `true` to start the page watcher + metadata fetcher |
 | `API_SERVER` | _(unset)_ | Set to `true` to start the REST API server in entrypoint |
 | `WEB_UI` | _(unset)_ | Set to `true` to start the HTML web UI in entrypoint |
+| `REDIS_URL` | _(unset)_ | Optional Redis URL (e.g. `redis://redis:6379`); enables API response caching |
 | `API_PORT` | `5001` | Port the REST API server listens on |
 | `WEB_PORT` | `5000` | Port the web UI listens on |
 | `API_URL` | `http://localhost:{API_PORT}` | Base URL the web UI uses to reach the API |
