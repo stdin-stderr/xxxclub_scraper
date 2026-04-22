@@ -857,6 +857,84 @@ def upsert_torrent_meta(conn, tuples: list[tuple]):
     conn.commit()
 
 
+def get_stats(conn) -> dict:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+              (SELECT COUNT(*) FROM torrents)   AS torrents,
+              (SELECT COUNT(*) FROM scenes)     AS scenes,
+              (SELECT COUNT(*) FROM performers) AS performers,
+              (SELECT COUNT(*) FROM sites)      AS sites,
+              (SELECT COUNT(*) FROM networks)   AS networks
+        """)
+        totals = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+
+        cur.execute("""
+            SELECT
+              COUNT(*) FILTER (WHERE metadata_attempted_at IS NOT NULL) AS attempted,
+              COUNT(*) FILTER (WHERE metadata_attempted_at IS NULL)     AS pending
+            FROM torrents
+        """)
+        row = cur.fetchone()
+        attempted, pending = row[0], row[1]
+
+        cur.execute("""
+            SELECT
+              COUNT(DISTINCT info_hash)                                           AS matched,
+              ROUND(AVG(match_score)::numeric, 3)::float                           AS score_avg,
+              COUNT(*) FILTER (WHERE match_score < 0.65)                         AS lt_065,
+              COUNT(*) FILTER (WHERE match_score >= 0.65 AND match_score < 0.75) AS s065_075,
+              COUNT(*) FILTER (WHERE match_score >= 0.75 AND match_score < 0.85) AS s075_085,
+              COUNT(*) FILTER (WHERE match_score >= 0.85)                        AS gte_085
+            FROM torrent_scenes
+        """)
+        mr = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+
+        cur.execute("""
+            SELECT scraped_at::date AS day, COUNT(*) AS count
+            FROM torrents
+            WHERE scraped_at >= NOW() - INTERVAL '30 days'
+            GROUP BY day
+            ORDER BY day DESC
+        """)
+        ingestion = [{"date": str(r[0]), "count": r[1]} for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT metadata_attempted_at::date AS day, COUNT(*) AS count
+            FROM torrents
+            WHERE metadata_attempted_at >= NOW() - INTERVAL '30 days'
+            GROUP BY day
+            ORDER BY day DESC
+        """)
+        metadata_attempts = [{"date": str(r[0]), "count": r[1]} for r in cur.fetchall()]
+
+    total_torrents = totals["torrents"]
+    matched = mr["matched"]
+
+    return {
+        "totals": totals,
+        "metadata_coverage": {
+            "attempted": attempted,
+            "pending": pending,
+            "attempt_rate_pct": round(attempted / total_torrents * 100, 1) if total_torrents else 0,
+        },
+        "match_rate": {
+            "matched": matched,
+            "unmatched": total_torrents - matched,
+            "match_pct": round(matched / total_torrents * 100, 1) if total_torrents else 0,
+            "score_avg": mr["score_avg"],
+            "score_distribution": {
+                "lt_065":  mr["lt_065"],
+                "065_075": mr["s065_075"],
+                "075_085": mr["s075_085"],
+                "gte_085": mr["gte_085"],
+            },
+        },
+        "scraped_last_30d": ingestion,
+        "metadata_attempts_last_30d": metadata_attempts,
+    }
+
+
 def upsert_torrents(conn, rows: list[dict]):
     """Bulk upsert a list of torrent dicts. Each dict must have at least
     info_hash and magnet."""

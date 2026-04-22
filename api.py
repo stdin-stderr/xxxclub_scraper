@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import date, datetime
+from decimal import Decimal
 
 import db
 from fastapi import FastAPI, HTTPException, Query
@@ -26,6 +27,8 @@ def _validate_date(value: str, param_name: str):
 def _serial(obj):
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
     if isinstance(obj, dict):
         return {k: _serial(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -136,6 +139,15 @@ def list_categories():
     finally:
         conn.close()
     return JSONResponse(content={"categories": cats})
+
+
+@app.get("/api/v1/stats")
+def stats():
+    conn = db.get_connection()
+    try:
+        return JSONResponse(content=_serial(db.get_stats(conn)))
+    finally:
+        conn.close()
 
 
 @app.get("/api/v1/sites")
