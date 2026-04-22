@@ -106,6 +106,7 @@ def list_scenes(
 def list_movies(
     q: str = Query(default=""),
     site: str = Query(default=""),
+    performer: str = Query(default=""),
     date_from: str = Query(default=""),
     date_to: str = Query(default=""),
     sort_by: str = Query(default="date"),
@@ -122,7 +123,7 @@ def list_movies(
     effective_date_to = date_to or date.today().isoformat()
     use_cache = not q
     key = cache.make_key(
-        "movies", site=site,
+        "movies", site=site, performer=performer,
         date_from=date_from, date_to=effective_date_to,
         sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
     ) if use_cache else None
@@ -132,6 +133,7 @@ def list_movies(
     try:
         total = db.count_movies(
             conn, q or None, site or None, date_from or None, effective_date_to,
+            performer=performer or None,
         )
         items = db.search_movies(
             conn,
@@ -143,6 +145,7 @@ def list_movies(
             sort_order=sort_order,
             limit=limit,
             offset=offset,
+            performer=performer or None,
         )
     finally:
         conn.close()

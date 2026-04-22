@@ -274,12 +274,21 @@ def performer_ui(
     total_pages = data["total_pages"]
     _enrich_scenes(scenes)
 
+    movies_data = _api_get("/api/v1/movies", {
+        "performer": performer["name"], "per_page": 30, "page": 1,
+        "sort_by": "date", "sort_order": "desc",
+    })
+    movies = movies_data["items"]
+    _enrich_scenes(movies)
+
     base_args = {"q": q, "per_page": limit}
     return HTMLResponse(_render(
         "performer.html",
         active_page="performers",
         performer=performer, scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
+        movies=movies,
+        movies_json=json.dumps(movies).replace("</", "<\\/"),
         q=q,
         per_page=limit, page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,

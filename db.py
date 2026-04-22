@@ -440,6 +440,7 @@ def count_movies(
     site: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    performer: str | None = None,
 ) -> int:
     """Count distinct movies that have at least one linked torrent."""
     sql = (
@@ -461,6 +462,13 @@ def count_movies(
     if date_to:
         sql += " AND s.date <= %s"
         params.append(date_to)
+    if performer:
+        sql += (
+            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
+            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
+            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
+        )
+        params.append(f"%{performer}%")
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
@@ -565,6 +573,7 @@ def search_movies(
     sort_order: str = "desc",
     limit: int = 30,
     offset: int = 0,
+    performer: str | None = None,
 ) -> list[dict]:
     """Return movies that have at least one linked torrent, with torrents and performers aggregated as JSON."""
     if sort_by not in ALLOWED_SCENE_SORT_COLS:
@@ -622,6 +631,13 @@ def search_movies(
     if date_to:
         sql += " AND s.date <= %s"
         params.append(date_to)
+    if performer:
+        sql += (
+            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
+            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
+            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
+        )
+        params.append(f"%{performer}%")
     sql += " GROUP BY s.id"
     sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
     sql += " LIMIT %s OFFSET %s"
