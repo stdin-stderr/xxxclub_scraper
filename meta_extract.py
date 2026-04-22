@@ -114,6 +114,51 @@ def extract_sitename(title: str) -> str | None:
     return first
 
 
+_RE_BRACKETS = re.compile(r'\[([^\]]*)\]|\(([^)]*)\)')
+_RE_YEAR_STRIP = re.compile(r'\b(19[7-9]\d|20\d\d)\b')
+_RE_BRACKET_SHORT_TAG = re.compile(r'\s*\[[A-Z*]{1,5}\]\s*$', re.IGNORECASE)
+_RE_YEAR_PAREN = re.compile(r'\s*\(\s*(?:19[7-9]\d|20\d\d)\s*\)\s*')
+_RE_MOVIE_QUALITY = re.compile(r'\s+\b(?:HD|SD|FullHD|UHD|DVDRip|BDRip|BluRay)\b.*$', re.IGNORECASE)
+
+
+def _is_studio_bracket(content: str) -> bool:
+    s = content.strip()
+    if re.fullmatch(r'19[7-9]\d|20\d\d', s):
+        return False
+    if re.fullmatch(r'TS|XC|UHD|HD|SD|4K|8K', s, re.IGNORECASE):
+        return False
+    return bool(s)
+
+
+def extract_movie_studio(title: str) -> str | None:
+    for m in _RE_BRACKETS.finditer(title):
+        content = (m.group(1) if m.group(1) is not None else m.group(2)).strip()
+        if not _is_studio_bracket(content):
+            continue
+        # Strip trailing year: "Reality Junkies 2025" → "Reality Junkies"
+        content = _RE_YEAR_STRIP.sub('', content).strip().rstrip(',').strip()
+        if not content:
+            continue
+        # Multiple studios: take first
+        return re.split(r',\s*', content)[0].strip() or None
+    return None
+
+
+def extract_movie_title(title: str) -> str | None:
+    for m in _RE_BRACKETS.finditer(title):
+        content = (m.group(1) if m.group(1) is not None else m.group(2)).strip()
+        if _is_studio_bracket(content):
+            raw = title[:m.start()].strip()
+            # Strip trailing short bracket tags like [TS]
+            raw = _RE_BRACKET_SHORT_TAG.sub('', raw).strip()
+            return raw or None
+    # Fallback: no studio bracket found — strip year parens and trailing noise
+    raw = _RE_YEAR_PAREN.sub(' ', title)
+    raw = _RE_TRAILING_NOISE.sub('', raw)
+    raw = _RE_MOVIE_QUALITY.sub('', raw).strip()
+    return raw or None
+
+
 def extract_title(title: str) -> str | None:
     """Extract a clean scene title, stripping site name, date, resolution and codec noise."""
     if not title:
@@ -167,12 +212,13 @@ def extract_title(title: str) -> str | None:
     return raw.strip() or None
 
 
-def extract_meta(title: str) -> dict:
+def extract_meta(title: str, category: str | None = None) -> dict:
+    is_movie = (category or "").lower() == "movies"
     return {
-        "title": extract_title(title),
+        "title": extract_movie_title(title) if is_movie else extract_title(title),
         "resolution": extract_resolution(title),
         "release_date": extract_date(title),
-        "sitename": extract_sitename(title),
+        "sitename": extract_movie_studio(title) if is_movie else extract_sitename(title),
     }
 
 
@@ -180,7 +226,7 @@ def upsert_torrent_meta(conn, rows: list[dict]):
     """Extract meta from titles and upsert into torrent_meta. Rows must have info_hash + title."""
     tuples = []
     for row in rows:
-        meta = extract_meta(row.get("title") or "")
+        meta = extract_meta(row.get("title") or "", category=row.get("category"))
         resolution = meta["resolution"] or _CATEGORY_RESOLUTION.get(row.get("category") or "")
         tuples.append((row["info_hash"], meta["title"], resolution, meta["release_date"], meta["sitename"]))
     db.upsert_torrent_meta(conn, tuples)
