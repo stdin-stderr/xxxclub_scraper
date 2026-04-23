@@ -99,6 +99,17 @@ def _str(val) -> str | None:
     return str(val)
 
 
+def _poster_urls(items) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in items or []:
+        url = _str(item)
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
 def _extract_performer(p: dict) -> dict:
     """Extract canonical performer data from a ThePornDB performer object (uses parent record)."""
     parent = p.get("parent") or {}
@@ -128,6 +139,7 @@ def _extract_performer(p: dict) -> dict:
         "image_url":         _str(parent.get("image")),
         "thumbnail_url":     _str(parent.get("thumbnail")),
         "face_url":          _str(parent.get("face")),
+        "poster_urls":       _poster_urls(parent.get("posters")),
         "links":             extras.get("links") or {},
     }
 

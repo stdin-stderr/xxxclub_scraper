@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS performers (
     image_url         TEXT,
     thumbnail_url     TEXT,
     face_url          TEXT,
+    poster_urls       JSONB,
     links             JSONB,
     fetched_at        TIMESTAMPTZ DEFAULT NOW()
 );
@@ -347,7 +348,7 @@ def search_torrents(
         "(SELECT COALESCE(json_agg(json_build_object("
         "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
         "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
-        "    'gender', p.gender"
+        "    'gender', p.gender, 'poster_urls', p.poster_urls"
         "  ) ORDER BY p.name), '[]'::json)"
         "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
         "  WHERE sp.scene_id = s.id"
@@ -501,7 +502,7 @@ _SCENE_SELECT = (
     "(SELECT COALESCE(json_agg(json_build_object("
     "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
     "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
-    "    'gender', p.gender"
+    "    'gender', p.gender, 'poster_urls', p.poster_urls"
     "  ) ORDER BY p.name), '[]'::json)"
     "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
     "  WHERE sp.scene_id = s.id"
@@ -614,13 +615,13 @@ def _sync_scene_performers(conn, scene_id: str, performers: list[dict]):
                     birthplace, birthplace_code, ethnicity, nationality,
                     hair_colour, eye_colour, height, weight, measurements,
                     cupsize, fake_boobs, career_start_year, career_end_year,
-                    rating, image_url, thumbnail_url, face_url, links, fetched_at
+                    rating, image_url, thumbnail_url, face_url, poster_urls, links, fetched_at
                 ) VALUES (
                     %(uuid)s, %(slug)s, %(name)s, %(full_name)s, %(bio)s, %(gender)s, %(birthday)s,
                     %(birthplace)s, %(birthplace_code)s, %(ethnicity)s, %(nationality)s,
                     %(hair_colour)s, %(eye_colour)s, %(height)s, %(weight)s, %(measurements)s,
                     %(cupsize)s, %(fake_boobs)s, %(career_start_year)s, %(career_end_year)s,
-                    %(rating)s, %(image_url)s, %(thumbnail_url)s, %(face_url)s, %(links)s, NOW()
+                    %(rating)s, %(image_url)s, %(thumbnail_url)s, %(face_url)s, %(poster_urls)s, %(links)s, NOW()
                 )
                 ON CONFLICT (uuid) DO UPDATE SET
                     slug              = COALESCE(EXCLUDED.slug, performers.slug),
@@ -646,10 +647,11 @@ def _sync_scene_performers(conn, scene_id: str, performers: list[dict]):
                     image_url         = COALESCE(EXCLUDED.image_url, performers.image_url),
                     thumbnail_url     = COALESCE(EXCLUDED.thumbnail_url, performers.thumbnail_url),
                     face_url          = COALESCE(EXCLUDED.face_url, performers.face_url),
+                    poster_urls       = COALESCE(EXCLUDED.poster_urls, performers.poster_urls),
                     links             = COALESCE(EXCLUDED.links, performers.links),
                     fetched_at        = EXCLUDED.fetched_at
                 """,
-                {**p, "links": Json(p.get("links") or {})},
+                {**p, "poster_urls": Json(p.get("poster_urls") or []), "links": Json(p.get("links") or {})},
             )
             cur.execute(
                 "INSERT INTO scene_performers (scene_id, performer_uuid) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -836,7 +838,7 @@ def list_performers(
 ) -> list[dict]:
     """Return performers matching query, ordered by name."""
     sql = (
-        "SELECT uuid, slug, name, full_name, gender, image_url, thumbnail_url, face_url, rating "
+        "SELECT uuid, slug, name, full_name, gender, image_url, thumbnail_url, face_url, poster_urls, rating "
         "FROM performers WHERE TRUE"
     )
     params: list = []
