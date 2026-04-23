@@ -2,10 +2,10 @@ import os
 import sys
 import threading
 
-print("=== VARIABLES SET: ===")
+print("=== VARIABLES SET: ===", flush=True)
 for k, v in sorted(os.environ.items()):
-    print(f"  {k}={v}")
-print("======================")
+    print(f"  {k}={v}", flush=True)
+print("======================", flush=True)
 
 import page_watcher
 import metadata_fetcher
