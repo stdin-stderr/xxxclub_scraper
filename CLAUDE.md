@@ -13,6 +13,7 @@ meta_extract.py    regex extraction of site/date/title from torrent titles → t
 metadata_fetcher.py  ThePornDB scene matching using torrent_meta structured fields
 api.py             generic REST API server (FastAPI, JSON); routes under /api/v1/
 web_ui.py          scene-first HTML frontend; calls api.py via HTTP (not db directly)
+stremio_addon.py   Stremio addon (FastAPI APIRouter); mounted on web_ui at /stremio/ when STREMIO=true
 entrypoint.py      starts watcher + metadata threads, then API server (thread) + web UI (main)
 ```
 
@@ -29,6 +30,7 @@ Browser → web_ui (WEB_PORT, default 5000)
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/scenes` | Paginated scene search; params: q, site, date_from, date_to, sort_by, sort_order, per_page, page |
+| GET | `/api/v1/scenes/{id}` | Single scene by ThePornDB ID (must have at least one linked torrent) |
 | GET | `/api/v1/torrents` | Paginated torrent search; params: q, site, date_from, date_to, category, sort_by, sort_order, per_page, page |
 | GET | `/api/v1/categories` | List distinct torrent categories |
 
@@ -148,6 +150,7 @@ docker compose exec db psql -U xxxclub_scraper -d xxxclub -c \
 | `API_PORT` | `5001` | Port the REST API server listens on |
 | `WEB_PORT` | `5000` | Port the web UI listens on |
 | `API_URL` | `http://localhost:{API_PORT}` | Base URL the web UI uses to reach the API |
+| `STREMIO` | _(unset)_ | Set to `true` to enable the Stremio addon routes at `/stremio/` on the web UI |
 
 All three flags are independent — set any combination. `WATCHER` and web servers all run in the same process; web servers block the main thread (API in a background thread if both are set). When only `WEB_UI=true`, set `API_URL` to point at a running API server elsewhere. If no flags are set the process exits immediately.
 

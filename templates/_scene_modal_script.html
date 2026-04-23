@@ -114,6 +114,14 @@ function openModal(idx) {
     dlEl.innerHTML = '';
   }
 
+  const stremioRow = document.getElementById('modal-stremio-row');
+  if (stremioRow && s.id) {
+    const sid = 'xxxclub_' + s.id;
+    document.getElementById('modal-stremio-web').href = 'https://web.stremio.com/#/detail/movie/' + encodeURIComponent(sid);
+    document.getElementById('modal-stremio-app').href = 'stremio:///detail/movie/' + encodeURIComponent(sid);
+    stremioRow.style.display = 'flex';
+  }
+
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
 }

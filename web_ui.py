@@ -5,10 +5,16 @@ from urllib.parse import quote_plus, urlencode
 
 import requests as req_lib
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "HEAD"], allow_headers=["*"])
+
+if os.environ.get("STREMIO"):
+    from stremio_addon import router as _stremio_router
+    app.include_router(_stremio_router)
 
 _API_PORT = os.environ.get("API_PORT", "5001")
 API_BASE = os.environ.get("API_URL", f"http://localhost:{_API_PORT}")
@@ -19,6 +25,7 @@ _jinja_env = Environment(
     autoescape=select_autoescape(["html"]),
 )
 _jinja_env.filters["urlencode"] = quote_plus
+_jinja_env.globals["stremio_enabled"] = bool(os.environ.get("STREMIO"))
 
 
 def _render(template_name: str, **ctx) -> str:

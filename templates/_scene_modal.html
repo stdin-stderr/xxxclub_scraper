@@ -15,6 +15,10 @@
       <div class="modal-performers" id="modal-performers"></div>
       <div class="modal-tags" id="modal-tags"></div>
       <div class="modal-desc" id="modal-desc"></div>
+      {% if stremio_enabled %}<div class="modal-stremio-row" id="modal-stremio-row" style="display:none;gap:8px;margin-bottom:12px">
+        <a id="modal-stremio-web" href="#" target="_blank" rel="noopener" style="flex:1;background:#12122a;color:#7af;border:1px solid #1e1e4a;border-radius:5px;padding:7px 0;font-size:12px;text-align:center;text-decoration:none">&#9654; Open in Stremio Web</a>
+        <a id="modal-stremio-app" href="#" style="flex:1;background:#12122a;color:#7af;border:1px solid #1e1e4a;border-radius:5px;padding:7px 0;font-size:12px;text-align:center;text-decoration:none">&#9654; Open in Stremio</a>
+      </div>{% endif %}
       <div class="modal-dl-heading" id="modal-dl-heading">Downloads</div>
       <div class="modal-torrents" id="modal-torrents"></div>
     </div>

@@ -336,6 +336,33 @@ def get_performer(uuid: str):
     return JSONResponse(content=result)
 
 
+@app.get("/api/v1/torrents/{info_hash}")
+def get_torrent(info_hash: str):
+    conn = db.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM torrents WHERE info_hash = %s", [info_hash])
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Torrent not found")
+            cols = [desc[0] for desc in cur.description]
+            return JSONResponse(content=_serial(dict(zip(cols, row))))
+    finally:
+        conn.close()
+
+
+@app.get("/api/v1/scenes/{scene_id}")
+def get_scene(scene_id: str):
+    conn = db.get_connection()
+    try:
+        scene = db.get_scene_by_id(conn, scene_id)
+    finally:
+        conn.close()
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    return JSONResponse(content=_serial(scene))
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("API_PORT", 5001))

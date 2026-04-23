@@ -1057,6 +1057,17 @@ def get_stats(conn) -> dict:
     }
 
 
+def get_scene_by_id(conn, scene_id: str) -> dict | None:
+    sql = _SCENE_SELECT + "WHERE s.id = %s GROUP BY s.id"
+    with conn.cursor() as cur:
+        cur.execute(sql, [scene_id])
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [desc[0] for desc in cur.description]
+        return dict(zip(cols, row))
+
+
 def upsert_torrents(conn, rows: list[dict]):
     """Bulk upsert a list of torrent dicts. Each dict must have at least
     info_hash and magnet."""
