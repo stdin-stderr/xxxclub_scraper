@@ -107,7 +107,6 @@ def index():
 @app.get("/scenes", response_class=HTMLResponse)
 def scenes_ui(
     q: str = Query(default=""),
-    site: str = Query(default=""),
     date_from: str = Query(default=""),
     date_to: str = Query(default=""),
     sort_by: str = Query(default="date"),
@@ -117,7 +116,7 @@ def scenes_ui(
 ):
     limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
     data = _api_get("/api/v1/scenes", {
-        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "q": q, "date_from": date_from, "date_to": date_to,
         "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
     })
     scenes = data["items"]
@@ -126,7 +125,7 @@ def scenes_ui(
     _enrich_scenes(scenes)
 
     base_args = {
-        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "q": q, "date_from": date_from, "date_to": date_to,
         "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
     }
     return HTMLResponse(_render(
@@ -134,7 +133,7 @@ def scenes_ui(
         active_page="scenes",
         scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
-        q=q, site=site, date_from=date_from, date_to=date_to,
+        q=q, date_from=date_from, date_to=date_to,
         sort_by=sort_by, sort_order=sort_order, per_page=limit,
         page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
@@ -293,6 +292,50 @@ def performer_ui(
         has_prev=page > 1, has_next=page < total_pages,
         prev_url=page_url(f"/performer/{uuid}", base_args, page - 1),
         next_url=page_url(f"/performer/{uuid}", base_args, page + 1),
+    ))
+
+
+@app.get("/network/{uuid}", response_class=HTMLResponse)
+def network_ui(
+    uuid: str,
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=30),
+):
+    try:
+        network = _api_get(f"/api/v1/networks/{uuid}", {})
+    except req_lib.HTTPError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Network not found")
+        raise
+    limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
+    scenes_data = _api_get("/api/v1/scenes", {
+        "network": uuid, "per_page": limit, "page": page,
+        "sort_by": "date", "sort_order": "desc",
+    })
+    scenes = scenes_data["items"]
+    total = scenes_data["total"]
+    total_pages = scenes_data["total_pages"]
+    _enrich_scenes(scenes)
+
+    movies_data = _api_get("/api/v1/movies", {
+        "network": uuid, "per_page": 30, "page": 1,
+        "sort_by": "date", "sort_order": "desc",
+    })
+    movies = movies_data["items"]
+    _enrich_scenes(movies)
+    scenes = sorted(scenes + movies, key=lambda x: x.get("date") or "", reverse=True)
+
+    base_args = {"per_page": limit}
+    return HTMLResponse(_render(
+        "network.html",
+        active_page="sites",
+        network=network,
+        scenes=scenes,
+        scenes_json=json.dumps(scenes).replace("</", "<\\/"),
+        per_page=limit, page=page, total=total, total_pages=total_pages,
+        has_prev=page > 1, has_next=page < total_pages,
+        prev_url=page_url(f"/network/{uuid}", base_args, page - 1),
+        next_url=page_url(f"/network/{uuid}", base_args, page + 1),
     ))
 
 

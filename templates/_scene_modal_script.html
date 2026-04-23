@@ -1,0 +1,131 @@
+<script id="modal-items-data" type="application/json">{{ modal_items_json | safe }}</script>
+<script>
+const modalItems = JSON.parse(document.getElementById('modal-items-data').textContent);
+
+function fmt(b) {
+  if (b == null) return '\u2014';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return b.toFixed(1) + '\u00a0' + u[i];
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openModal(idx) {
+  const s = modalItems[idx];
+  const overlay = document.getElementById('modal-overlay');
+
+  const bg = s.background_url || s.poster_url || '';
+  const hero = document.getElementById('modal-hero');
+  const img = document.getElementById('modal-img');
+  if (bg) { img.src = bg; hero.style.display = ''; }
+  else { hero.style.display = 'none'; }
+
+  document.getElementById('modal-title').textContent = s.title || '(untitled)';
+
+  const logo = document.getElementById('modal-logo');
+  if (s.site_logo_url) { logo.src = s.site_logo_url; logo.style.display = ''; }
+  else { logo.style.display = 'none'; }
+
+  const siteLink = document.getElementById('modal-site-name');
+  siteLink.textContent = s.site_name || s.network_name || '';
+  if (s.site_uuid) {
+    siteLink.href = '/site/' + encodeURIComponent(s.site_uuid);
+  } else {
+    siteLink.removeAttribute('href');
+  }
+
+  const netEl = document.getElementById('modal-network');
+  netEl.replaceChildren();
+  if (s.network_name && s.network_name !== s.site_name) {
+    netEl.appendChild(document.createTextNode('/ '));
+    if (s.network_uuid) {
+      const networkLink = document.createElement('a');
+      networkLink.href = '/network/' + encodeURIComponent(s.network_uuid);
+      networkLink.textContent = s.network_name;
+      networkLink.style.color = '#aaa';
+      networkLink.onclick = () => closeModal();
+      netEl.appendChild(networkLink);
+    } else {
+      netEl.appendChild(document.createTextNode(s.network_name));
+    }
+  }
+
+  document.getElementById('modal-dur').textContent = s.duration_human || '';
+  document.getElementById('modal-format').textContent = s.format ? '\u00b7 ' + s.format : '';
+  document.getElementById('modal-date').textContent = s.date || '';
+
+  const perf = document.getElementById('modal-performers');
+  perf.innerHTML = '';
+  if (s.performers && s.performers.length) {
+    s.performers.forEach(p => {
+      const chip = document.createElement('a');
+      chip.className = 'modal-performer';
+      chip.href = p.uuid ? '/performer/' + encodeURIComponent(p.uuid) : '#';
+      const img = document.createElement('img');
+      if (p.image_url) { img.src = p.image_url; }
+      else { img.style.background = '#333'; }
+      img.alt = p.name || '';
+      img.onerror = function() { this.style.display = 'none'; };
+      const name = document.createElement('span');
+      name.textContent = p.name || '';
+      chip.appendChild(img);
+      chip.appendChild(name);
+      perf.appendChild(chip);
+    });
+    perf.style.display = '';
+  } else { perf.style.display = 'none'; }
+
+  const tagsEl = document.getElementById('modal-tags');
+  tagsEl.innerHTML = '';
+  (s.tags || []).forEach(t => {
+    const sp = document.createElement('span');
+    sp.textContent = t;
+    tagsEl.appendChild(sp);
+  });
+
+  document.getElementById('modal-desc').textContent = s.description || '';
+
+  const dlH = document.getElementById('modal-dl-heading');
+  const dlEl = document.getElementById('modal-torrents');
+  if (s.torrents && s.torrents.length) {
+    dlH.style.display = '';
+    let html = '<table><thead><tr><th>Torrent</th><th>Cat</th><th>Res</th><th>Size</th><th>Seeds</th><th>Leech</th><th>Age</th></tr></thead><tbody>';
+    s.torrents.forEach(t => {
+      const sc = t.seeders > 0 ? ' class="seeds-good"' : '';
+      html += `<tr>
+        <td><a href="${esc(t.magnet)}" title="${esc(t.title)}">${esc(t.title)}</a></td>
+        <td>${esc(t.category||'')}</td>
+        <td style="color:#717171">${esc(t.resolution||'')}</td>
+        <td>${esc(fmt(t.size_bytes))}</td>
+        <td${sc}>${t.seeders != null ? t.seeders : ''}</td>
+        <td style="color:#717171">${t.leechers != null ? t.leechers : ''}</td>
+        <td style="color:#717171">${esc(t.age_label||'')}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    dlEl.innerHTML = html;
+  } else {
+    dlH.style.display = 'none';
+    dlEl.innerHTML = '';
+  }
+
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function closeModalOutside(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>

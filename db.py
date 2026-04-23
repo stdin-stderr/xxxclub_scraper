@@ -393,29 +393,28 @@ def search_torrents(
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def count_scenes(
-    conn,
-    query: str | None = None,
-    site: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    performer: str | None = None,
-) -> int:
-    """Count distinct scenes that have at least one linked torrent."""
-    sql = (
-        "SELECT COUNT(DISTINCT s.id) FROM scenes s "
-        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
-        "WHERE s.type = 'Scene'"
-    )
-    params: list = []
+def _apply_scene_filters(
+    sql: str,
+    params: list,
+    *,
+    query,
+    site,
+    date_from,
+    date_to,
+    performer,
+    network_uuid,
+    site_ref_expr: str = "s.site_uuid",
+) -> str:
     if query:
         sql += " AND s.title ILIKE %s"
         params.append(f"%{query}%")
     if site:
-        # Match regardless of internal spaces (e.g. "Tiny4K" ↔ "Tiny 4K")
         sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
         params.append(f"%{site}%")
         params.append(f"%{site.replace(' ', '')}%")
+    if network_uuid:
+        sql += f" AND {site_ref_expr} IN (SELECT uuid FROM sites WHERE network_uuid = %s)"
+        params.append(network_uuid)
     if date_from:
         sql += " AND s.date >= %s"
         params.append(date_from)
@@ -429,6 +428,33 @@ def count_scenes(
             " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
         )
         params.append(f"%{performer}%")
+    return sql
+
+
+def count_scenes(
+    conn,
+    query: str | None = None,
+    site: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    performer: str | None = None,
+    network_uuid: str | None = None,
+) -> int:
+    """Count distinct scenes that have at least one linked torrent."""
+    sql = (
+        "SELECT COUNT(DISTINCT s.id) FROM scenes s "
+        "LEFT JOIN LATERAL ("
+        "  SELECT uuid, network_uuid FROM sites "
+        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '') "
+        "  LIMIT 1"
+        ") st ON true "
+        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
+        "WHERE s.type = 'Scene'"
+    )
+    params: list = []
+    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+                               date_to=date_to, performer=performer, network_uuid=network_uuid,
+                               site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
@@ -441,37 +467,66 @@ def count_movies(
     date_from: str | None = None,
     date_to: str | None = None,
     performer: str | None = None,
+    network_uuid: str | None = None,
 ) -> int:
     """Count distinct movies that have at least one linked torrent."""
     sql = (
         "SELECT COUNT(DISTINCT s.id) FROM scenes s "
+        "LEFT JOIN LATERAL ("
+        "  SELECT uuid, network_uuid FROM sites "
+        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '') "
+        "  LIMIT 1"
+        ") st ON true "
         "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
         "WHERE s.type = 'Movie'"
     )
     params: list = []
-    if query:
-        sql += " AND s.title ILIKE %s"
-        params.append(f"%{query}%")
-    if site:
-        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
-        params.append(f"%{site}%")
-        params.append(f"%{site.replace(' ', '')}%")
-    if date_from:
-        sql += " AND s.date >= %s"
-        params.append(date_from)
-    if date_to:
-        sql += " AND s.date <= %s"
-        params.append(date_to)
-    if performer:
-        sql += (
-            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
-            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
-            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
-        )
-        params.append(f"%{performer}%")
+    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+                               date_to=date_to, performer=performer, network_uuid=network_uuid,
+                               site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchone()[0]
+
+
+_SCENE_SELECT = (
+    "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
+    "s.date, s.duration_seconds, s.type, s.format, "
+    "s.site_name, COALESCE(s.site_uuid, MAX(st.uuid)) AS site_uuid, s.site_logo_url, "
+    "s.network_name, s.network_logo_url, "
+    "COALESCE(MAX(st.network_uuid), "
+    "  (SELECT n.uuid FROM networks n WHERE n.slug = s.network_slug LIMIT 1)"
+    ") AS network_uuid, "
+    "s.tags, "
+    "(SELECT COALESCE(json_agg(json_build_object("
+    "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
+    "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
+    "    'gender', p.gender"
+    "  ) ORDER BY p.name), '[]'::json)"
+    "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
+    "  WHERE sp.scene_id = s.id"
+    ") AS performers, "
+    "json_agg(json_build_object("
+    "  'info_hash', t.info_hash,"
+    "  'title', t.title,"
+    "  'magnet', t.magnet,"
+    "  'size_bytes', t.size_bytes,"
+    "  'category', t.category,"
+    "  'seeders', t.seeders,"
+    "  'leechers', t.leechers,"
+    "  'resolution', tm.resolution,"
+    "  'date_added', t.date_added"
+    ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
+    "FROM scenes s "
+    "LEFT JOIN LATERAL ("
+    "  SELECT uuid, network_uuid FROM sites"
+    "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '')"
+    "  LIMIT 1"
+    ") st ON true "
+    "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
+    "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
+    "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
+)
 
 
 def search_scenes(
@@ -485,73 +540,19 @@ def search_scenes(
     limit: int = 30,
     offset: int = 0,
     performer: str | None = None,
+    network_uuid: str | None = None,
 ) -> list[dict]:
     """Return scenes that have at least one linked torrent, with torrents and performers aggregated as JSON."""
     if sort_by not in ALLOWED_SCENE_SORT_COLS:
         sort_by = "date"
     sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
-    # seeders is an aggregate over joined torrents, not a scenes column
     order_col = "MAX(t.seeders)" if sort_by == "seeders" else f"s.{sort_by}"
 
-    sql = (
-        "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
-        "s.date, s.duration_seconds, s.type, s.format, "
-        "s.site_name, COALESCE(s.site_uuid, MAX(st.uuid)) AS site_uuid, s.site_logo_url, "
-        "s.network_name, s.network_logo_url, "
-        "s.tags, "
-        "(SELECT COALESCE(json_agg(json_build_object("
-        "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
-        "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
-        "    'gender', p.gender"
-        "  ) ORDER BY p.name), '[]'::json)"
-        "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
-        "  WHERE sp.scene_id = s.id"
-        ") AS performers, "
-        "json_agg(json_build_object("
-        "  'info_hash', t.info_hash,"
-        "  'title', t.title,"
-        "  'magnet', t.magnet,"
-        "  'size_bytes', t.size_bytes,"
-        "  'category', t.category,"
-        "  'seeders', t.seeders,"
-        "  'leechers', t.leechers,"
-        "  'resolution', tm.resolution,"
-        "  'date_added', t.date_added"
-        ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
-        "FROM scenes s "
-        "LEFT JOIN LATERAL ("
-        "  SELECT uuid FROM sites"
-        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '')"
-        "  LIMIT 1"
-        ") st ON true "
-        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
-        "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
-        "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
-        "WHERE s.type = 'Scene'"
-    )
+    sql = _SCENE_SELECT + "WHERE s.type = 'Scene'"
     params: list = []
-    if query:
-        sql += " AND s.title ILIKE %s"
-        params.append(f"%{query}%")
-    if site:
-        # Match regardless of internal spaces (e.g. "Tiny4K" ↔ "Tiny 4K")
-        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
-        params.append(f"%{site}%")
-        params.append(f"%{site.replace(' ', '')}%")
-    if date_from:
-        sql += " AND s.date >= %s"
-        params.append(date_from)
-    if date_to:
-        sql += " AND s.date <= %s"
-        params.append(date_to)
-    if performer:
-        sql += (
-            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
-            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
-            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
-        )
-        params.append(f"%{performer}%")
-    # GROUP BY PK — PostgreSQL infers functional dependency for other columns
+    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+                               date_to=date_to, performer=performer, network_uuid=network_uuid,
+                               site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     sql += " GROUP BY s.id"
     sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
     sql += " LIMIT %s OFFSET %s"
@@ -574,6 +575,7 @@ def search_movies(
     limit: int = 30,
     offset: int = 0,
     performer: str | None = None,
+    network_uuid: str | None = None,
 ) -> list[dict]:
     """Return movies that have at least one linked torrent, with torrents and performers aggregated as JSON."""
     if sort_by not in ALLOWED_SCENE_SORT_COLS:
@@ -581,63 +583,11 @@ def search_movies(
     sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
     order_col = "MAX(t.seeders)" if sort_by == "seeders" else f"s.{sort_by}"
 
-    sql = (
-        "SELECT s.id, s.title, s.description, s.background_url, s.poster_url, "
-        "s.date, s.duration_seconds, s.type, s.format, "
-        "s.site_name, COALESCE(s.site_uuid, MAX(st.uuid)) AS site_uuid, s.site_logo_url, "
-        "s.network_name, s.network_logo_url, "
-        "s.tags, "
-        "(SELECT COALESCE(json_agg(json_build_object("
-        "    'uuid', p.uuid, 'name', p.name, 'image_url', p.image_url,"
-        "    'thumbnail_url', p.thumbnail_url, 'face_url', p.face_url,"
-        "    'gender', p.gender"
-        "  ) ORDER BY p.name), '[]'::json)"
-        "  FROM scene_performers sp JOIN performers p ON p.uuid = sp.performer_uuid"
-        "  WHERE sp.scene_id = s.id"
-        ") AS performers, "
-        "json_agg(json_build_object("
-        "  'info_hash', t.info_hash,"
-        "  'title', t.title,"
-        "  'magnet', t.magnet,"
-        "  'size_bytes', t.size_bytes,"
-        "  'category', t.category,"
-        "  'seeders', t.seeders,"
-        "  'leechers', t.leechers,"
-        "  'resolution', tm.resolution,"
-        "  'date_added', t.date_added"
-        ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
-        "FROM scenes s "
-        "LEFT JOIN LATERAL ("
-        "  SELECT uuid FROM sites"
-        "  WHERE replace(lower(name), ' ', '') = replace(lower(COALESCE(s.site_name, '')), ' ', '')"
-        "  LIMIT 1"
-        ") st ON true "
-        "INNER JOIN torrent_scenes ts ON ts.scene_id = s.id "
-        "INNER JOIN torrents t ON t.info_hash = ts.info_hash "
-        "LEFT JOIN torrent_meta tm ON tm.info_hash = t.info_hash "
-        "WHERE s.type = 'Movie'"
-    )
+    sql = _SCENE_SELECT + "WHERE s.type = 'Movie'"
     params: list = []
-    if query:
-        sql += " AND s.title ILIKE %s"
-        params.append(f"%{query}%")
-    if site:
-        sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
-        params.append(f"%{site}%")
-        params.append(f"%{site.replace(' ', '')}%")
-    if date_from:
-        sql += " AND s.date >= %s"
-        params.append(date_from)
-    if date_to:
-        sql += " AND s.date <= %s"
-        params.append(date_to)
-    if performer:
-        sql += (
-            " AND EXISTS (SELECT 1 FROM scene_performers sp2"
-            " JOIN performers p2 ON p2.uuid = sp2.performer_uuid"
-            " WHERE sp2.scene_id = s.id AND p2.name ILIKE %s)"
-        )
-        params.append(f"%{performer}%")
+    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+                               date_to=date_to, performer=performer, network_uuid=network_uuid,
+                               site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     sql += " GROUP BY s.id"
     sql += f" ORDER BY {order_col} {sort_order} NULLS LAST, s.id ASC"
     sql += " LIMIT %s OFFSET %s"
@@ -840,6 +790,31 @@ def get_site(conn, uuid: str) -> dict | None:
             return None
         cols = [d[0] for d in cur.description]
         return dict(zip(cols, row))
+
+
+def get_network(conn, uuid: str) -> dict | None:
+    """Return network record with its sites by UUID, or None if not found."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT uuid, tpdb_id, slug, name, url, rating, logo_url, favicon_url, poster_url
+            FROM networks WHERE uuid = %s
+            """,
+            (uuid,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        network = dict(zip([d[0] for d in cur.description], row))
+        cur.execute(
+            """
+            SELECT uuid, slug, name, url, logo_url, favicon_url, poster_url, rating
+            FROM sites WHERE network_uuid = %s ORDER BY name
+            """,
+            (uuid,),
+        )
+        network["sites"] = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+        return network
 
 
 def count_performers(conn, query: str | None = None) -> int:

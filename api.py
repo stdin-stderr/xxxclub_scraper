@@ -53,6 +53,7 @@ def list_scenes(
     q: str = Query(default=""),
     site: str = Query(default=""),
     performer: str = Query(default=""),
+    network: str = Query(default=""),
     date_from: str = Query(default=""),
     date_to: str = Query(default=""),
     sort_by: str = Query(default="date"),
@@ -69,7 +70,7 @@ def list_scenes(
     effective_date_to = date_to or date.today().isoformat()
     use_cache = not q
     key = cache.make_key(
-        "scenes", site=site, performer=performer,
+        "scenes", site=site, performer=performer, network=network,
         date_from=date_from, date_to=effective_date_to,
         sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
     ) if use_cache else None
@@ -79,7 +80,7 @@ def list_scenes(
     try:
         total = db.count_scenes(
             conn, q or None, site or None, date_from or None, effective_date_to,
-            performer=performer or None,
+            performer=performer or None, network_uuid=network or None,
         )
         items = db.search_scenes(
             conn,
@@ -92,6 +93,7 @@ def list_scenes(
             limit=limit,
             offset=offset,
             performer=performer or None,
+            network_uuid=network or None,
         )
     finally:
         conn.close()
@@ -107,6 +109,7 @@ def list_movies(
     q: str = Query(default=""),
     site: str = Query(default=""),
     performer: str = Query(default=""),
+    network: str = Query(default=""),
     date_from: str = Query(default=""),
     date_to: str = Query(default=""),
     sort_by: str = Query(default="date"),
@@ -123,7 +126,7 @@ def list_movies(
     effective_date_to = date_to or date.today().isoformat()
     use_cache = not q
     key = cache.make_key(
-        "movies", site=site, performer=performer,
+        "movies", site=site, performer=performer, network=network,
         date_from=date_from, date_to=effective_date_to,
         sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
     ) if use_cache else None
@@ -133,7 +136,7 @@ def list_movies(
     try:
         total = db.count_movies(
             conn, q or None, site or None, date_from or None, effective_date_to,
-            performer=performer or None,
+            performer=performer or None, network_uuid=network or None,
         )
         items = db.search_movies(
             conn,
@@ -146,6 +149,7 @@ def list_movies(
             limit=limit,
             offset=offset,
             performer=performer or None,
+            network_uuid=network or None,
         )
     finally:
         conn.close()
@@ -236,6 +240,23 @@ def stats():
     finally:
         conn.close()
     cache.cache_set(key, result, ttl=600)
+    return JSONResponse(content=result)
+
+
+@app.get("/api/v1/networks/{uuid}")
+def get_network(uuid: str):
+    key = cache.make_key("network", uuid=uuid)
+    if (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
+    conn = db.get_connection()
+    try:
+        n = db.get_network(conn, uuid)
+    finally:
+        conn.close()
+    if not n:
+        raise HTTPException(status_code=404, detail="Network not found")
+    result = _serial(n)
+    cache.cache_set(key, result, ttl=3600)
     return JSONResponse(content=result)
 
 
