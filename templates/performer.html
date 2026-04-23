@@ -107,7 +107,7 @@
 {% if scenes %}
 <div class="grid">
   {% for s in scenes %}
-  <div class="card" onclick="openModal('s', {{ loop.index0 }})">
+  <div class="card" onclick="openModal({{ loop.index0 }})">
     <div class="card-thumb">
       {% set bg = s.background_url or s.poster_url %}
       {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% else %}<div class="no-img">No image</div>{% endif %}
@@ -130,7 +130,7 @@
         {% if s.max_seeders %}<span class="card-seeds">{{ s.max_seeders }} seeds</span>{% endif %}
       </div>
       {% if s.torrents %}
-      <button class="card-dl-btn" onclick="event.stopPropagation();openModal('s', {{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
+      <button class="card-dl-btn" onclick="event.stopPropagation();openModal({{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
       {% endif %}
     </div>
   </div>
@@ -146,41 +146,6 @@
   {% if has_next %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="disabled">Next &rarr;</span>{% endif %}
 </div>
 
-{% if movies %}
-<div class="section-header">{{ movies | length }} movie{{ "s" if movies | length != 1 else "" }}</div>
-<div class="grid">
-  {% for s in movies %}
-  <div class="card" onclick="openModal('m', {{ loop.index0 }})">
-    <div class="card-thumb">
-      {% set bg = s.background_url or s.poster_url %}
-      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% else %}<div class="no-img">No image</div>{% endif %}
-      {% if s.duration_human %}<div class="card-dur">{{ s.duration_human }}</div>{% endif %}
-    </div>
-    <div class="card-body">
-      {% if s.site_logo_url %}
-        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else None %}
-        {% if site_href %}
-        <a href="{{ site_href }}" onclick="event.stopPropagation()"><img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}"></a>
-        {% else %}
-        <img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}">
-        {% endif %}
-      {% endif %}
-      <div class="card-title">{{ s.title or "(untitled)" }}</div>
-      {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
-      {% if s.description %}<div class="card-desc">{{ s.description }}</div>{% endif %}
-      <div class="card-meta">
-        <span>{{ s.date or "" }}</span>
-        {% if s.format %}<span style="color:#717171">{{ s.format }}</span>{% endif %}
-        {% if s.max_seeders %}<span class="card-seeds">{{ s.max_seeders }} seeds</span>{% endif %}
-      </div>
-      {% if s.torrents %}
-      <button class="card-dl-btn" onclick="event.stopPropagation();openModal('m', {{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
-      {% endif %}
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
 {% endblock %}
 
 {% block scene_modal %}
@@ -210,10 +175,8 @@
 
 {% block scripts %}
 <script id="scenes-data" type="application/json">{{ scenes_json | safe }}</script>
-<script id="movies-data" type="application/json">{{ movies_json | safe }}</script>
 <script>
 const scenes = JSON.parse(document.getElementById('scenes-data').textContent);
-const movies = JSON.parse(document.getElementById('movies-data').textContent);
 
 function fmt(b) {
   if (b == null) return '\u2014';
@@ -228,8 +191,8 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function openModal(type, idx) {
-  const s = (type === 'm' ? movies : scenes)[idx];
+function openModal(idx) {
+  const s = scenes[idx];
   const bg = s.background_url || s.poster_url || '';
   const hero = document.getElementById('modal-hero');
   const img = document.getElementById('modal-img');

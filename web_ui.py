@@ -280,6 +280,7 @@ def performer_ui(
     })
     movies = movies_data["items"]
     _enrich_scenes(movies)
+    scenes = sorted(scenes + movies, key=lambda x: x.get("date") or "", reverse=True)
 
     base_args = {"q": q, "per_page": limit}
     return HTMLResponse(_render(
@@ -287,8 +288,6 @@ def performer_ui(
         active_page="performers",
         performer=performer, scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
-        movies=movies,
-        movies_json=json.dumps(movies).replace("</", "<\\/"),
         q=q,
         per_page=limit, page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
@@ -338,6 +337,7 @@ def site_ui(
     })
     movies = movies_data["items"]
     _enrich_scenes(movies)
+    scenes = sorted(scenes + movies, key=lambda x: x.get("date") or "", reverse=True)
 
     base_args = {"q": q, "per_page": limit}
     return HTMLResponse(_render(
@@ -345,8 +345,6 @@ def site_ui(
         active_page="sites",
         site=site, scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
-        movies=movies,
-        movies_json=json.dumps(movies).replace("</", "<\\/"),
         q=q,
         per_page=limit, page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
