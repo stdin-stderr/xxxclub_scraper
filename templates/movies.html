@@ -4,7 +4,6 @@
 {% block topbar_form %}
 <form class="search-form" method="GET" action="/movies">
   <input type="text" name="q" value="{{ q }}" placeholder="Search movies…">
-  <input type="text" name="site" value="{{ site }}" placeholder="Studio…">
   <input type="date" name="date_from" value="{{ date_from }}" title="From">
   <input type="date" name="date_to" value="{{ date_to }}" title="To">
   <select name="sort_by">
