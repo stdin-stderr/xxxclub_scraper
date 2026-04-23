@@ -7,7 +7,7 @@
   <input type="date" name="date_from" value="{{ date_from }}" title="From">
   <input type="date" name="date_to" value="{{ date_to }}" title="To">
   <select name="sort_by">
-    {% for col, label in [("date","Release Date"),("seeders","Top Seeders"),("title","Title"),("site_name","Site")] %}
+    {% for col, label in [("date","Release Date"),("date_added","Torrent Added"),("seeders","Top Seeders"),("title","Title"),("site_name","Site")] %}
     <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
@@ -26,7 +26,8 @@
 
 {% block content %}
 <div class="quickbar">
-  <a href="/scenes?sort_by=date&sort_order=desc">Latest</a>
+  <a href="/scenes?sort_by=date&sort_order=desc">New Scenes</a>
+  <a href="/scenes?sort_by=date_added&sort_order=desc">New Releases</a>
   <a href="/scenes?sort_by=seeders&sort_order=desc">Top Scenes</a>
   <span class="sep">|</span>
   <a href="/torrents">Torrents</a>

@@ -200,7 +200,7 @@ ALLOWED_SORT_COLS = {"seeders", "leechers", "date_added", "title", "size_bytes",
 # Columns that live on torrent_meta rather than torrents
 _META_SORT_COLS = {"release_date"}
 
-ALLOWED_SCENE_SORT_COLS = {"date", "title", "site_name", "seeders"}
+ALLOWED_SCENE_SORT_COLS = {"date", "title", "site_name", "seeders", "date_added"}
 
 
 def get_connection():
@@ -517,7 +517,7 @@ _SCENE_SELECT = (
     "  'leechers', t.leechers,"
     "  'resolution', tm.resolution,"
     "  'date_added', t.date_added"
-    ") ORDER BY t.seeders DESC NULLS LAST) AS torrents "
+    ") ORDER BY t.size_bytes DESC NULLS LAST, t.seeders DESC NULLS LAST) AS torrents "
     "FROM scenes s "
     "LEFT JOIN LATERAL ("
     "  SELECT uuid, network_uuid FROM sites"
@@ -547,7 +547,13 @@ def search_scenes(
     if sort_by not in ALLOWED_SCENE_SORT_COLS:
         sort_by = "date"
     sort_order = "ASC" if sort_order.lower() == "asc" else "DESC"
-    order_col = "MAX(t.seeders)" if sort_by == "seeders" else f"s.{sort_by}"
+    if sort_by == "seeders":
+        order_col = "MAX(t.seeders)"
+    elif sort_by == "date_added":
+        # Desc = newest linked torrent first; Asc = oldest linked torrent first.
+        order_col = "MAX(t.date_added)" if sort_order == "DESC" else "MIN(t.date_added)"
+    else:
+        order_col = f"s.{sort_by}"
 
     sql = _SCENE_SELECT + "WHERE s.type = 'Scene'"
     params: list = []
