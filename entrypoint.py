@@ -64,7 +64,7 @@ if WATCHER:
 import uvicorn
 
 api_port = int(os.environ.get("API_PORT", 5001))
-web_port = int(os.environ.get("WEB_PORT", 5000))
+web_port = int(os.environ.get("PORT") or os.environ.get("WEB_PORT", 5000))
 
 if API_SERVER and WEB_UI:
     from api import app as api_app
