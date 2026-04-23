@@ -4,32 +4,36 @@
 {% block extra_css %}
   .performer-hero{position:relative;overflow:hidden;border-bottom:1px solid #1e1e1e;background-color:#0c0c10;background-position:center;background-size:cover}
   .performer-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,8,12,.22) 0,rgba(8,8,12,.42) 34%,rgba(8,8,12,.78) 72%,rgba(8,8,12,.98) 100%)}
-  .profile-header{position:relative;z-index:1;display:flex;gap:28px;padding:180px 20px 28px;align-items:flex-end;flex-wrap:wrap}
-  .profile-photo-wrap{width:240px;height:240px;border-radius:28px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45);background:#1a1a20;border:1px solid rgba(255,255,255,.08);flex-shrink:0}
-  .profile-photo{width:100%;height:100%;object-fit:cover;background:#2a2a2a;display:block}
-  .profile-no-photo{width:100%;height:100%;background:#2a2a2a;display:flex;align-items:center;justify-content:center;font-size:84px;color:#555}
-  .profile-info{flex:1;min-width:260px;padding-top:18px}
+  .profile-header{position:relative;z-index:1;padding:180px 20px 28px}
+  .profile-info{max-width:900px;padding-top:18px}
   .profile-name{font-size:38px;line-height:1.05;font-weight:800;color:#f1f1f1;margin-bottom:8px;text-shadow:0 4px 18px rgba(0,0,0,.4)}
   .profile-full-name{font-size:14px;color:#aaa;margin-bottom:12px}
   .profile-meta{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;color:#aaa;margin-bottom:12px}
   .profile-meta-item{display:flex;gap:5px}
   .profile-meta-label{color:#555;flex-shrink:0}
   .profile-bio{font-size:13px;color:#aaa;line-height:1.6;max-width:600px;margin-bottom:12px}
+  .profile-posters{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;max-width:920px;margin:10px 0 14px}
+  .profile-poster{display:block;aspect-ratio:2/3;border-radius:12px;overflow:hidden;background:#1a1a20;border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 30px rgba(0,0,0,.25);cursor:pointer;padding:0;color:inherit;appearance:none}
+  .profile-poster img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .16s ease}
+  .profile-poster:hover img{transform:scale(1.03)}
   .profile-links{display:flex;flex-wrap:wrap;gap:8px}
   .profile-link{font-size:12px;color:#7af;background:#1a1a2e;border:1px solid #2a2a4e;padding:3px 10px;border-radius:3px;text-decoration:none;white-space:nowrap}
   .profile-link:hover{background:#2a2a4e;text-decoration:none}
   .section-header{padding:16px 20px 0;font-size:15px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
+  .poster-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1100;padding:20px;align-items:center;justify-content:center}
+  .poster-overlay.open{display:flex}
+  .poster-modal{position:relative;max-width:min(92vw,1100px);max-height:92vh}
+  .poster-modal img{display:block;max-width:100%;max-height:92vh;width:auto;height:auto;border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.55)}
+  .poster-close{position:absolute;top:12px;right:12px;background:rgba(0,0,0,.72);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
   @media (max-width: 780px){
-    .profile-header{gap:20px;padding:148px 16px 22px}
-    .profile-photo-wrap{width:180px;height:180px;border-radius:22px}
-    .profile-no-photo{font-size:68px}
-    .profile-info{min-width:0;padding-top:8px}
+    .profile-header{padding:148px 16px 22px}
+    .profile-info{padding-top:8px}
     .profile-name{font-size:28px}
   }
   @media (max-width: 520px){
-    .profile-header{display:block;padding-top:132px}
-    .profile-photo-wrap{width:160px;height:160px;margin-bottom:14px}
+    .profile-header{padding-top:132px}
     .profile-name{font-size:24px}
+    .profile-posters{grid-template-columns:repeat(2,minmax(0,1fr))}
   }
 {% endblock %}
 
@@ -54,16 +58,6 @@
 
 <div class="performer-hero"{% if banner_sources %} style="background-image: linear-gradient(90deg, rgba(12,12,18,.6) 0, rgba(12,12,18,.1) 35%, rgba(12,12,18,.55) 100%), {% for bg in banner_sources %}url('{{ bg }}'){% if not loop.last %}, {% endif %}{% endfor %};"{% else %} style="background-image: radial-gradient(circle at top left,#26263d 0,#121217 45%,#0c0c10 100%);"{% endif %}>
   <div class="profile-header">
-    {% set photo = performer.image_url or performer.thumbnail_url %}
-    <div class="profile-photo-wrap">
-      {% if photo %}
-      <img class="profile-photo" src="{{ photo }}" alt="{{ performer.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-      <div class="profile-no-photo" style="display:none">&#128100;</div>
-      {% else %}
-      <div class="profile-no-photo">&#128100;</div>
-      {% endif %}
-    </div>
-
     <div class="profile-info">
       <div class="profile-name">{{ performer.name }}</div>
       {% if performer.full_name and performer.full_name != performer.name %}
@@ -87,6 +81,16 @@
 
       {% if performer.bio %}
       <div class="profile-bio">{{ performer.bio }}</div>
+      {% endif %}
+
+      {% if performer.poster_urls %}
+      <div class="profile-posters">
+        {% for url in performer.poster_urls %}
+        <button class="profile-poster" type="button" onclick="openPosterModal('{{ url }}')">
+          <img src="{{ url }}" alt="{{ performer.name }} poster {{ loop.index }}" loading="lazy" onerror="this.parentElement.style.display='none'">
+        </button>
+        {% endfor %}
+      </div>
       {% endif %}
 
       {% if performer.links %}
@@ -150,9 +154,40 @@
 
 {% block scene_modal %}
 {% include "_scene_modal.html" %}
+<div class="poster-overlay" id="poster-overlay" onclick="closePosterModalOutside(event)">
+  <div class="poster-modal">
+    <button class="poster-close" type="button" onclick="closePosterModal()">&#x2715;</button>
+    <img id="poster-modal-img" src="" alt="">
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 {% set modal_items_json = scenes_json %}
 {% include "_scene_modal_script.html" %}
+<script>
+function openPosterModal(url) {
+  const overlay = document.getElementById('poster-overlay');
+  const img = document.getElementById('poster-modal-img');
+  img.src = url;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePosterModal() {
+  document.getElementById('poster-overlay').classList.remove('open');
+  document.getElementById('poster-modal-img').removeAttribute('src');
+  document.body.style.overflow = '';
+}
+
+function closePosterModalOutside(e) {
+  if (e.target === document.getElementById('poster-overlay')) closePosterModal();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('poster-overlay').classList.contains('open')) {
+    closePosterModal();
+  }
+});
+</script>
 {% endblock %}
