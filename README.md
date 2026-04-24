@@ -108,6 +108,8 @@ docker compose up -d
 | `METADATA_INTERVAL` | `300` | Seconds between metadata fetch cycles |
 | `METADATA_MIN_SCORE` | `0.65` | Minimum match score (0.0–1.0); lower = more matches, higher = fewer false positives |
 | `REDIS_URL` | _(unset)_ | Optional Redis URL (e.g. `redis://redis:6379`); enables API response caching |
+| `STREMIO` | _(unset)_ | Set to `true` to mount the Stremio addon at `/stremio/` on the web UI |
+| `STREMTHRU_URL` | `https://stremthru.13377001.xyz` | StremThru proxy URL used for debrid integration in the Stremio addon |
 
 ## Redis caching (optional)
 
