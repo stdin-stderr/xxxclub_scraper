@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}Watch — {{ scene.title }}{% endblock %}
+
+{% block extra_css %}
+  .stream-page{max-width:900px;margin:24px auto;padding:0 20px}
+  .stream-player-wrap{width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden;margin-top:20px;display:none}
+  .stream-player-wrap video{width:100%;height:100%;display:block}
+  .stream-player-msg{display:flex;align-items:center;justify-content:center;height:100%;font-size:14px;color:#aaa}
+  .stream-hero{display:flex;gap:16px;margin-bottom:20px;align-items:flex-start}
+  .stream-hero img{width:200px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;flex-shrink:0;background:#222}
+  .stream-hero-info h1{margin:0 0 6px;font-size:20px;line-height:1.3}
+  .stream-hero-info .meta{font-size:13px;color:#717171}
+  .stream-setup h2,.stream-streams h2{font-size:15px;margin:0 0 12px;font-weight:600}
+  .stream-setup form{display:flex;flex-direction:column;gap:10px;max-width:360px}
+  .stream-setup select,.stream-setup input{background:#1e1e1e;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:8px 10px;font-size:14px}
+  .stream-setup button[type=submit]{background:#272727;color:#f1f1f1;border:1px solid #3f3f3f;border-radius:4px;padding:8px;font-size:14px;cursor:pointer}
+  .stream-setup button[type=submit]:hover{background:#3f3f3f}
+  .stream-streams-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  #change-service-btn{background:none;border:none;color:#7af;font-size:12px;cursor:pointer;padding:0}
+  #change-service-btn:hover{text-decoration:underline}
+  #stream-status{font-size:13px;color:#717171;margin-bottom:10px}
+  #stream-table{width:100%;border-collapse:collapse;font-size:13px}
+  #stream-table th{text-align:left;padding:4px 8px;color:#555;border-bottom:1px solid #2e2e2e;white-space:nowrap}
+  #stream-table td{padding:7px 8px;border-bottom:1px solid #1e1e1e;vertical-align:middle}
+  #stream-table tbody tr{cursor:pointer}
+  #stream-table tbody tr:hover{background:#1e1e1e}
+  #stream-table tbody tr.playing{background:#1a2a1a}
+  #stream-table tbody tr:last-child td{border-bottom:none}
+  .stream-msg-row td{padding:6px 8px;font-size:12px;color:#fa4;background:#1a1200}
+{% endblock %}
+
+{% block content %}
+<script id="scene-data" type="application/json">{{ scene_json | safe }}</script>
+<script id="services-data" type="application/json">{{ services_json | safe }}</script>
+
+<div class="stream-page">
+
+  <!-- Scene info header -->
+  <div class="stream-hero" id="scene-hero">
+    {% if scene.background_url or scene.poster_url %}
+    <img src="{{ scene.background_url or scene.poster_url }}" alt="">
+    {% endif %}
+    <div class="stream-hero-info">
+      <h1>{{ scene.title }}</h1>
+      <div class="meta">
+        {% if scene.site_name %}{{ scene.site_name }}{% if scene.date %} · {% endif %}{% endif %}
+        {% if scene.date %}{{ scene.date }}{% endif %}
+        {% if scene.duration_human %} · {{ scene.duration_human }}{% endif %}
+      </div>
+      {% if scene.performers %}
+      <div style="margin-top:6px;font-size:12px;color:#7af">
+        {{ scene.performers | map(attribute='name') | join(', ') }}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Debrid setup (shown when no credentials stored) -->
+  <div class="stream-setup" id="setup-section">
+    <h2>Choose a debrid service to stream</h2>
+    <form id="setup-form">
+      <select id="service-select">
+        {% for svc_key, svc in debrid_services.items() %}
+        <option value="{{ svc_key }}">{{ svc.name }}</option>
+        {% endfor %}
+      </select>
+      <input id="api-key-input" type="password" placeholder="API key" autocomplete="off">
+      <button type="submit">Load streams</button>
+    </form>
+  </div>
+
+  <!-- Stream list (shown once credentials are present) -->
+  <div class="stream-streams" id="stream-section" style="display:none">
+    <div class="stream-streams-header">
+      <h2 id="stream-heading">Streams</h2>
+      <button id="change-service-btn">Change service</button>
+    </div>
+    <div id="stream-status"></div>
+    <table id="stream-table" style="display:none">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Title</th>
+          <th>Res</th>
+          <th>Size</th>
+          <th>Seeds</th>
+        </tr>
+      </thead>
+      <tbody id="stream-tbody"></tbody>
+    </table>
+
+    <!-- Video player (shown when a stream is selected) -->
+    <div class="stream-player-wrap" id="player-wrap">
+      <video id="player" controls preload="metadata"></video>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const scene = JSON.parse(document.getElementById('scene-data').textContent);
+const services = JSON.parse(document.getElementById('services-data').textContent);
+const STORAGE_KEY = 'debrid_config';
+
+function fmt(b) {
+  if (b == null) return '\u2014';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return b.toFixed(1) + '\u00a0' + u[i];
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function loadConfig() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
+}
+
+function showSetup() {
+  document.getElementById('setup-section').style.display = '';
+  document.getElementById('stream-section').style.display = 'none';
+}
+
+function showStreams() {
+  document.getElementById('setup-section').style.display = 'none';
+  document.getElementById('stream-section').style.display = '';
+}
+
+function setStatus(msg) {
+  document.getElementById('stream-status').textContent = msg;
+}
+
+async function loadStreams(cfg) {
+  showStreams();
+  const svcName = (services[cfg.service] || {}).name || cfg.service;
+  document.getElementById('stream-heading').textContent = 'Streams \u00b7 ' + svcName;
+  document.getElementById('stream-table').style.display = 'none';
+  setStatus('Checking cache\u2026');
+
+  const hashes = (scene.torrents || []).map(t => t.info_hash);
+  if (!hashes.length) {
+    setStatus('No torrents found for this scene.');
+    return;
+  }
+
+  let cached = {};
+  try {
+    const resp = await fetch('/api/streams/check', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({service: cfg.service, key: cfg.key, hashes})
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) {
+        setStatus('Authentication failed \u2014 please check your API key.');
+        localStorage.removeItem(STORAGE_KEY);
+        setTimeout(showSetup, 1800);
+        return;
+      }
+      setStatus('Failed to check cache: ' + (err.detail || resp.status));
+      return;
+    }
+    cached = await resp.json();
+  } catch (e) {
+    setStatus('Network error: ' + e.message);
+    return;
+  }
+
+  const torrents = [...(scene.torrents || [])];
+  torrents.sort((a, b) => {
+    const ca = cached[a.info_hash] ? 1 : 0;
+    const cb = cached[b.info_hash] ? 1 : 0;
+    if (cb !== ca) return cb - ca;
+    return (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0);
+  });
+
+  const tbody = document.getElementById('stream-tbody');
+  tbody.innerHTML = '';
+  torrents.forEach(t => {
+    const isCached = !!cached[t.info_hash];
+    const tr = document.createElement('tr');
+    tr.dataset.hash = t.info_hash;
+    tr.innerHTML = `
+      <td style="font-size:16px;width:28px">${isCached ? '&#x26A1;' : '&#x23F3;'}</td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.title)}">${esc(t.title)}</td>
+      <td style="color:#717171;white-space:nowrap">${esc(t.resolution || '')}</td>
+      <td style="color:#717171;white-space:nowrap">${fmt(t.size_bytes)}</td>
+      <td style="${t.seeders > 0 ? 'color:#4c4' : 'color:#717171'}">${t.seeders != null ? t.seeders : '\u2014'}</td>
+    `;
+    tr.addEventListener('click', () => playStream(cfg, t, isCached, tr));
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('stream-table').style.display = '';
+  setStatus('');
+}
+
+async function playStream(cfg, torrent, isCached, tr) {
+  if (!isCached) {
+    document.querySelectorAll('.stream-msg-row').forEach(r => r.remove());
+    const msgRow = document.createElement('tr');
+    msgRow.className = 'stream-msg-row';
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    td.textContent = 'Not cached \u2014 queuing for download. Try again in a few minutes.';
+    msgRow.appendChild(td);
+    tr.insertAdjacentElement('afterend', msgRow);
+    setTimeout(() => msgRow.remove(), 5000);
+  }
+
+  // Mark row as loading
+  document.querySelectorAll('#stream-tbody tr.playing').forEach(r => r.classList.remove('playing'));
+  tr.classList.add('playing');
+  setStatus('Resolving stream\u2026');
+
+  const url = '/api/streams/url/'
+    + encodeURIComponent(cfg.service) + '/'
+    + encodeURIComponent(torrent.info_hash)
+    + '?key=' + encodeURIComponent(cfg.key);
+
+  let data;
+  try {
+    const resp = await fetch(url);
+    if (resp.status === 401) {
+      setStatus('Authentication failed \u2014 please check your API key.');
+      localStorage.removeItem(STORAGE_KEY);
+      setTimeout(showSetup, 1800);
+      return;
+    }
+    data = await resp.json();
+  } catch (e) {
+    setStatus('Network error: ' + e.message);
+    tr.classList.remove('playing');
+    return;
+  }
+
+  setStatus('');
+
+  if (data.status === 'pending') {
+    setStatus('Queued for download \u2014 try again in a few minutes.');
+    tr.classList.remove('playing');
+    return;
+  }
+  if (data.status !== 'ok' || !data.url) {
+    setStatus('Could not resolve stream: ' + (data.message || 'unknown error'));
+    tr.classList.remove('playing');
+    return;
+  }
+
+  const player = document.getElementById('player');
+  const playerWrap = document.getElementById('player-wrap');
+  player.src = data.url;
+  playerWrap.style.display = 'block';
+  player.play().catch(() => {});
+  playerWrap.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+document.getElementById('setup-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const service = document.getElementById('service-select').value;
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key) return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({service, key}));
+  loadStreams({service, key});
+});
+
+document.getElementById('change-service-btn').addEventListener('click', () => {
+  localStorage.removeItem(STORAGE_KEY);
+  const player = document.getElementById('player');
+  player.pause();
+  player.src = '';
+  document.getElementById('player-wrap').style.display = 'none';
+  showSetup();
+});
+
+const cfg = loadConfig();
+if (cfg && cfg.service && cfg.key) {
+  loadStreams(cfg);
+} else {
+  showSetup();
+}
+</script>
+{% endblock %}

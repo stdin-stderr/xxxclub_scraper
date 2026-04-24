@@ -114,12 +114,15 @@ function openModal(idx) {
     dlEl.innerHTML = '';
   }
 
-  const stremioRow = document.getElementById('modal-stremio-row');
-  if (stremioRow && s.id) {
+  const actionRow = document.getElementById('modal-action-row');
+  if (actionRow && s.id) {
+    document.getElementById('modal-watch-btn').href = '/stream/' + encodeURIComponent(s.id);
     const sid = 'xxxclub_' + s.id;
-    document.getElementById('modal-stremio-web').href = 'https://web.stremio.com/#/detail/movie/' + encodeURIComponent(sid);
-    document.getElementById('modal-stremio-app').href = 'stremio:///detail/movie/' + encodeURIComponent(sid);
-    stremioRow.style.display = 'flex';
+    const stremioWeb = document.getElementById('modal-stremio-web');
+    if (stremioWeb) stremioWeb.href = 'https://web.stremio.com/#/detail/movie/' + encodeURIComponent(sid);
+    const stremioApp = document.getElementById('modal-stremio-app');
+    if (stremioApp) stremioApp.href = 'stremio:///detail/movie/' + encodeURIComponent(sid);
+    actionRow.style.display = 'flex';
   }
 
   overlay.classList.add('open');

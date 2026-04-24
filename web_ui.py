@@ -4,17 +4,20 @@ from datetime import datetime, timezone
 from urllib.parse import quote_plus, urlencode
 
 import requests as req_lib
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+import cache
+import debrid
+import stremio_addon
+
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "HEAD"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "HEAD", "POST"], allow_headers=["*"])
 
 if os.environ.get("STREMIO"):
-    from stremio_addon import router as _stremio_router
-    app.include_router(_stremio_router)
+    app.include_router(stremio_addon.router)
 
 _API_PORT = os.environ.get("API_PORT", "5001")
 API_BASE = os.environ.get("API_URL", f"http://localhost:{_API_PORT}")
@@ -400,6 +403,81 @@ def site_ui(
         prev_url=page_url(f"/site/{uuid}", base_args, page - 1),
         next_url=page_url(f"/site/{uuid}", base_args, page + 1),
     ))
+
+
+@app.get("/stream/{scene_id}", response_class=HTMLResponse)
+def stream_ui(scene_id: str):
+    try:
+        scene = _api_get(f"/api/v1/scenes/{scene_id}", {})
+    except req_lib.HTTPError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Scene not found")
+        raise
+    _enrich_scenes([scene])
+    services = debrid.DebridClient.SUPPORTED_SERVICES
+    return HTMLResponse(_render(
+        "stream.html",
+        scene=scene,
+        scene_json=json.dumps(scene).replace("</", "<\\/"),
+        debrid_services=services,
+        services_json=json.dumps(services).replace("</", "<\\/"),
+    ))
+
+
+@app.post("/api/streams/check")
+async def streams_check(request: Request):
+    body = await request.json()
+    service = body.get("service", "")
+    key = body.get("key", "")
+    hashes = body.get("hashes", [])
+    if not service or not key or not hashes:
+        raise HTTPException(status_code=400, detail="service, key, and hashes required")
+    try:
+        client = debrid.DebridClient(service, key)
+        cached = client.check_cached(hashes)
+    except debrid.DebridAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(content=cached)
+
+
+@app.get("/api/streams/resolve/{service}/{info_hash}")
+def streams_resolve(service: str, info_hash: str, key: str = Query(default="")):
+    if not key:
+        raise HTTPException(status_code=400, detail="key query parameter required")
+    return stremio_addon.do_resolve(service, key, info_hash)
+
+
+@app.get("/api/streams/url/{service}/{info_hash}")
+def streams_url(service: str, info_hash: str, key: str = Query(default="")):
+    """Return the playable URL as JSON rather than redirecting (for the video player)."""
+    if not key:
+        raise HTTPException(status_code=400, detail="key query parameter required")
+    try:
+        torrent = _api_get(f"/api/v1/torrents/{info_hash}", {})
+    except req_lib.HTTPError:
+        raise HTTPException(status_code=404, detail="Torrent not found")
+    magnet = torrent.get("magnet", "")
+    if not magnet:
+        raise HTTPException(status_code=404, detail="No magnet link available")
+    cache_key = cache.make_key("stream_url", service=service, info_hash=info_hash, key=key)
+    if (hit := cache.cache_get(cache_key)) is not None:
+        return JSONResponse(hit)
+    try:
+        client = debrid.DebridClient(service, key)
+        url = client.get_stream_url(magnet)
+        if not url:
+            return JSONResponse({"status": "error", "message": "No playable file found"})
+        result = {"status": "ok", "url": url}
+        cache.cache_set(cache_key, result, ttl=600)
+        return JSONResponse(result)
+    except debrid.DebridPendingError:
+        return JSONResponse({"status": "pending"})
+    except debrid.DebridAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except debrid.DebridError as e:
+        return JSONResponse({"status": "error", "message": str(e)})
 
 
 if __name__ == "__main__":

@@ -633,6 +633,40 @@ def stream(config: str, stremio_id: str, request: Request):
 
 # ─── Resolve ─────────────────────────────────────────────────────────────────
 
+def _error_video(name: str) -> RedirectResponse:
+    url = f"{debrid.STREMTHRU_URL}/v0/store/_/static/{name}.mp4"
+    return RedirectResponse(url=url, status_code=302)
+
+
+def do_resolve(service: str, api_key: str, info_hash: str):
+    """Resolve an info_hash to a playable URL via debrid. Returns a Response."""
+    try:
+        torrent = _api_get(f"/api/v1/torrents/{info_hash}")
+    except Exception:
+        raise HTTPException(status_code=404, detail="Torrent not found in local database")
+    magnet = torrent.get("magnet", "")
+    if not magnet:
+        raise HTTPException(status_code=404, detail="No magnet link available")
+
+    try:
+        client = debrid.DebridClient(service, api_key)
+        dl_url = client.get_stream_url(magnet)
+        if not dl_url:
+            return _error_video("download_failed")
+        return RedirectResponse(url=dl_url, status_code=301)
+    except debrid.DebridPendingError:
+        return _error_video("downloading")
+    except debrid.DebridAuthError:
+        return _error_video("401")
+    except debrid.DebridLinkGenerationError:
+        return _error_video("download_failed")
+    except debrid.DebridError:
+        return _error_video("download_failed")
+    except Exception as e:
+        _log.warning(f"resolve {service}/{info_hash}: {e}")
+        return _error_video("500")
+
+
 @router.get("/{config}/resolve/{service}/{info_hash}")
 def resolve(config: str, service: str, info_hash: str):
     """Generate a playable link for a specific debrid service."""
@@ -646,32 +680,4 @@ def resolve(config: str, service: str, info_hash: str):
     if not api_key:
         raise HTTPException(status_code=400, detail=f"{service} API key not configured")
 
-    try:
-        torrent = _api_get(f"/api/v1/torrents/{info_hash}")
-    except Exception:
-        raise HTTPException(status_code=404, detail="Torrent not found in local database")
-    magnet = torrent.get("magnet", "")
-    if not magnet:
-        raise HTTPException(status_code=404, detail="No magnet link available")
-
-    def _video(name: str) -> RedirectResponse:
-        url = f"{debrid.STREMTHRU_URL}/v0/store/_/static/{name}.mp4"
-        return RedirectResponse(url=url, status_code=302)
-
-    try:
-        client = debrid.DebridClient(service, api_key)
-        dl_url = client.get_stream_url(magnet)
-        if not dl_url:
-            return _video("download_failed")
-        return RedirectResponse(url=dl_url, status_code=301)
-    except debrid.DebridPendingError:
-        return _video("downloading")
-    except debrid.DebridAuthError:
-        return _video("401")
-    except debrid.DebridLinkGenerationError:
-        return _video("download_failed")
-    except debrid.DebridError:
-        return _video("download_failed")
-    except Exception as e:
-        _log.warning(f"resolve {service}/{info_hash}: {e}")
-        return _video("500")
+    return do_resolve(service, api_key, info_hash)

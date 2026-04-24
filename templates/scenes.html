@@ -62,12 +62,12 @@
       {% if s.torrents %}
       <button class="card-dl-btn" onclick="event.stopPropagation();openModal({{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
       {% endif %}
-      {% if stremio_enabled %}
       <div class="card-stremio-row" onclick="event.stopPropagation()">
-        <a class="card-stremio-btn" href="https://web.stremio.com/#/detail/movie/xxxclub_{{ s.id }}" target="_blank" rel="noopener">&#9654; Web</a>
+        <a class="card-stremio-btn" href="/stream/{{ s.id }}" style="background:#1a2a1a;color:#7c7;border-color:#2a4a2a">&#9654; Watch</a>
+        {% if stremio_enabled %}
         <a class="card-stremio-btn" href="stremio:///detail/movie/xxxclub_{{ s.id }}">&#9654; Stremio</a>
+        {% endif %}
       </div>
-      {% endif %}
     </div>
   </div>
   {% endfor %}
