@@ -1,24 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ network.name }} — Network{% endblock %}
-
-{% block extra_css %}
-  .network-hero{position:relative;overflow:hidden;border-bottom:1px solid #1e1e1e;background-color:#0c0c10;background-position:center;background-size:cover}
-  .network-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,8,12,.24) 0,rgba(8,8,12,.46) 34%,rgba(8,8,12,.8) 72%,rgba(8,8,12,.98) 100%)}
-  .network-header{position:relative;z-index:1;display:flex;gap:28px;padding:170px 20px 28px;align-items:flex-end;flex-wrap:wrap}
-  .network-logo-wrap{min-width:220px;max-width:320px;min-height:120px;border-radius:24px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45);background:rgba(18,18,24,.88);border:1px solid rgba(255,255,255,.08);padding:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-  .network-logo-large{width:100%;max-height:120px;border-radius:8px;object-fit:contain;background:#111;padding:8px}
-  .network-no-logo{width:100%;min-height:84px;border-radius:10px;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:40px;color:#555}
-  .network-info{flex:1;min-width:260px;padding-top:16px}
-  .network-name{font-size:38px;line-height:1.05;font-weight:800;color:#f1f1f1;margin-bottom:8px;text-shadow:0 4px 18px rgba(0,0,0,.4)}
-  .network-url{font-size:13px;margin-bottom:10px}
-  .network-rating{font-size:13px;color:#717171}
-  .section-header{padding:16px 20px 0;font-size:15px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
-  .sites-row{display:flex;flex-wrap:wrap;gap:12px;padding:12px 20px 4px}
-  .site-chip{display:flex;align-items:center;gap:8px;background:#161616;border:1px solid #272727;border-radius:8px;padding:8px 12px;text-decoration:none;color:#f1f1f1;transition:background 0.12s}
-  .site-chip:hover{background:#222;text-decoration:none}
-  .site-chip img{height:22px;width:auto;border-radius:2px}
-  .site-chip span{font-size:13px}
-{% endblock %}
+{% block title %}{{ network.name }} — Library{% endblock %}
 
 {% block content %}
 {% set banner_sources = [] %}
@@ -26,32 +7,32 @@
   {% set bg = s.background_url or s.poster_url %}
   {% if bg %}{% set _ = banner_sources.append(bg) %}{% endif %}
 {% endfor %}
+{% set hero_bg = banner_sources[0] if banner_sources else None %}
 
-<div class="network-hero"{% if banner_sources %} style="background-image: linear-gradient(90deg, rgba(12,12,18,.6) 0, rgba(12,12,18,.1) 35%, rgba(12,12,18,.55) 100%), {% for bg in banner_sources %}url('{{ bg }}'){% if not loop.last %}, {% endif %}{% endfor %};"{% else %} style="background-image: radial-gradient(circle at top left,#26263d 0,#121217 45%,#0c0c10 100%);"{% endif %}>
-  <div class="network-header">
-    <div class="network-logo-wrap">
+<div class="hero-section">
+  {% if hero_bg %}
+  <div class="hero-bg" style="background-image:url('{{ hero_bg }}')"></div>
+  {% endif %}
+  <div class="hero-content">
+    <div class="hero-logo-wrap">
       {% if network.logo_url %}
-      <img class="network-logo-large" src="{{ network.logo_url }}" alt="{{ network.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-      <div class="network-no-logo" style="display:none">&#127758;</div>
+      <img src="{{ network.logo_url }}" alt="{{ network.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <span class="hero-logo-placeholder" style="display:none">&#127758;</span>
       {% else %}
-      <div class="network-no-logo">&#127758;</div>
+      <span class="hero-logo-placeholder">&#127758;</span>
       {% endif %}
     </div>
-    <div class="network-info">
-      <div class="network-name">{{ network.name }}</div>
-      {% if network.url %}
-      <div class="network-url"><a href="{{ network.url }}" target="_blank" rel="noopener">{{ network.url }}</a></div>
-      {% endif %}
-      {% if network.rating %}
-      <div class="network-rating">Rating: {{ "%.1f"|format(network.rating) }}</div>
-      {% endif %}
+    <div class="hero-info">
+      <div class="hero-name">{{ network.name }}</div>
+      {% if network.url %}<div class="hero-sub"><a href="{{ network.url }}" target="_blank" rel="noopener">{{ network.url }}</a></div>{% endif %}
+      {% if network.rating %}<div class="hero-sub" style="margin-top:4px">Rating: {{ "%.1f"|format(network.rating) }}</div>{% endif %}
     </div>
   </div>
 </div>
 
 {% if network.sites %}
-<div class="section-header">{{ network.sites | length }} site{{ "s" if network.sites | length != 1 else "" }}</div>
-<div class="sites-row">
+<div class="section-head">{{ network.sites | length }} site{{ "s" if network.sites | length != 1 else "" }}</div>
+<div class="sites-chips-row">
   {% for s in network.sites %}
   <a class="site-chip" href="/site/{{ s.uuid }}">
     {% if s.logo_url %}<img src="{{ s.logo_url }}" alt="{{ s.name }}" onerror="this.style.display='none'">{% endif %}
@@ -61,56 +42,54 @@
 </div>
 {% endif %}
 
-<div class="section-header">{{ total }} scene{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
+<div class="section-head">{{ total }} scene{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
 
 {% if scenes %}
-<div class="grid">
+<div class="scene-grid" style="padding-top:12px">
   {% for s in scenes %}
-  <div class="card" onclick="openModal({{ loop.index0 }})">
-    <div class="card-thumb">
+  {% set max_seeds = s.max_seeders or 0 %}
+  <div class="sc-card" onclick="openModal({{ loop.index0 }})">
+    <div class="sc-thumb">
       {% set bg = s.background_url or s.poster_url %}
-      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% else %}<div class="no-img">No image</div>{% endif %}
-      {% if s.duration_human %}<div class="card-dur">{{ s.duration_human }}</div>{% endif %}
+      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% endif %}
+      <div class="sc-overlay"><div class="sc-play">&#9654;</div></div>
+      {% if s.duration_human %}<span class="sc-dur">{{ s.duration_human }}</span>{% endif %}
+      {% if s.format %}<span class="sc-res">{{ s.format }}</span>{% endif %}
     </div>
-    <div class="card-body">
-      {% if s.site_logo_url %}
-        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else None %}
-        {% if site_href %}
-        <a href="{{ site_href }}" onclick="event.stopPropagation()"><img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}"></a>
-        {% else %}
-        <img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}">
+    <div class="sc-body">
+      <div class="sc-site-row">
+        {% if s.site_logo_url %}
+        <img class="sc-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}" onerror="this.style.display='none'">
         {% endif %}
-      {% endif %}
-      <div class="card-title">{{ s.title or "(untitled)" }}</div>
-      {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
-      {% if s.description %}<div class="card-desc">{{ s.description }}</div>{% endif %}
-      <div class="card-meta">
-        <span>{{ s.date or "" }}</span>
-        {% if s.format %}<span style="color:#717171">{{ s.format }}</span>{% endif %}
-        {% if s.max_seeders %}<span class="card-seeds">{{ s.max_seeders }} seeds</span>{% endif %}
+        <span class="sc-site-name">{{ s.site_name or "" }}</span>
+      </div>
+      <div class="sc-title">{{ s.title or "(untitled)" }}</div>
+      {% if s.performers %}<div class="sc-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
+      <div class="sc-meta">
+        <span class="sc-date">{{ s.date or "" }}</span>
+        <span class="seeds-pill{% if max_seeds == 0 %} dead{% endif %}">{{ max_seeds }}S</span>
       </div>
       {% if s.torrents %}
-      <button class="card-dl-btn" onclick="event.stopPropagation();openModal({{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
+      <div class="sc-actions" onclick="event.stopPropagation()">
+        <button class="act-btn" onclick="openModal({{ loop.index0 }})">&#8659; {{ s.torrents | length }} torrent{{ "s" if s.torrents | length != 1 else "" }}</button>
+      </div>
       {% endif %}
     </div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<p style="padding:20px;color:#717171">No content found.</p>
+<p style="padding:24px;color:var(--t3)">No content found.</p>
 {% endif %}
 
-<div class="pagination">
-  {% if has_prev %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="disabled">&larr; Prev</span>{% endif %}
-  <span style="color:#717171">Page {{ page }} / {{ total_pages }}</span>
-  {% if has_next %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="disabled">Next &rarr;</span>{% endif %}
+<div class="pg-bar">
+  {% if has_prev %}<a class="pg-btn" href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="pg-btn disabled">&larr; Prev</span>{% endif %}
+  <span class="pg-info">Page {{ page }} / {{ total_pages }}</span>
+  {% if has_next %}<a class="pg-btn" href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="pg-btn disabled">Next &rarr;</span>{% endif %}
 </div>
 {% endblock %}
 
-{% block scene_modal %}
-{% include "_scene_modal.html" %}
-{% endblock %}
-
+{% block scene_modal %}{% include "_scene_modal.html" %}{% endblock %}
 {% block scripts %}
 {% set modal_items_json = scenes_json %}
 {% include "_scene_modal_script.html" %}

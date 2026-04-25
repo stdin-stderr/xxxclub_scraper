@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Networks — Library{% endblock %}
+
+{% block content %}
+<div class="page-bar">
+  <span class="page-bar-title">Networks</span>
+  <span class="page-bar-count">{{ networks | length }}</span>
+  <form class="search-wrap" method="GET" action="/networks" style="display:flex;gap:6px;max-width:none;flex:1;margin-left:auto;">
+    <div class="search-wrap" style="margin-left:0;flex:1;max-width:320px;">
+      <span class="search-ico">&#128269;</span>
+      <input class="search-input" type="text" name="q" value="{{ q }}" placeholder="Search networks…">
+    </div>
+  </form>
+</div>
+
+<div class="count-bar">{{ networks | length }} network{{ "s" if networks | length != 1 else "" }}</div>
+
+{% if networks %}
+<div class="sites-grid">
+  {% for n in networks %}
+  <a class="site-card" href="/network/{{ n.uuid }}">
+    <div class="site-banner">
+      {% if n.logo_url %}
+      <img src="{{ n.logo_url }}" alt="{{ n.name }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <span class="site-banner-name" style="display:none">{{ n.name }}</span>
+      {% else %}
+      <span class="site-banner-name">{{ n.name }}</span>
+      {% endif %}
+    </div>
+    <div class="site-info">
+      <div class="site-name">{{ n.name }}</div>
+      {% if n.site_count %}<div class="site-count">{{ n.site_count }} site{{ "s" if n.site_count != 1 else "" }}</div>{% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p style="padding:24px;color:var(--t3)">No networks found.</p>
+{% endif %}
+{% endblock %}

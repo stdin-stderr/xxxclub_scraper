@@ -243,6 +243,23 @@ def stats():
     return JSONResponse(content=result)
 
 
+@app.get("/api/v1/networks")
+def list_networks(q: str = Query(default="")):
+    use_cache = not q
+    key = cache.make_key("networks") if use_cache else None
+    if use_cache and (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
+    conn = db.get_connection()
+    try:
+        networks = db.list_networks(conn, query=q or None)
+    finally:
+        conn.close()
+    result = {"networks": _serial(networks)}
+    if use_cache and key:
+        cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
+
+
 @app.get("/api/v1/networks/{uuid}")
 def get_network(uuid: str):
     key = cache.make_key("network", uuid=uuid)

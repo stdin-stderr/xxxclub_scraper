@@ -227,6 +227,7 @@ def torrents_ui(
         categories=cats["categories"],
         q=q, site=site, date_from=date_from, date_to=date_to,
         selected_category=category, sort_by=sort_by, sort_order=sort_order, per_page=limit,
+        view="table",
         page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
         prev_url=page_url("/torrents", base_args, page - 1),
@@ -405,6 +406,27 @@ def site_ui(
     ))
 
 
+@app.get("/networks", response_class=HTMLResponse)
+def networks_ui(q: str = Query(default="")):
+    data = _api_get("/api/v1/networks", {"q": q})
+    return HTMLResponse(_render(
+        "networks.html",
+        active_page="networks",
+        q=q,
+        networks=data.get("networks", []),
+    ))
+
+
+@app.get("/configure", response_class=HTMLResponse)
+def configure_ui(request: Request):
+    base = str(request.base_url)
+    return HTMLResponse(_render(
+        "configure.html",
+        active_page="configure",
+        request_base_url=base,
+    ))
+
+
 @app.get("/stream/{scene_id}", response_class=HTMLResponse)
 def stream_ui(scene_id: str):
     try:
@@ -417,6 +439,7 @@ def stream_ui(scene_id: str):
     services = debrid.DebridClient.SUPPORTED_SERVICES
     return HTMLResponse(_render(
         "stream.html",
+        active_page="stream",
         scene=scene,
         scene_json=json.dumps(scene).replace("</", "<\\/"),
         debrid_services=services,

@@ -1,53 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ performer.name }} — Performers{% endblock %}
-
-{% block extra_css %}
-  .performer-hero{position:relative;overflow:hidden;border-bottom:1px solid #1e1e1e;background-color:#0c0c10;background-position:center;background-size:cover}
-  .performer-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,8,12,.22) 0,rgba(8,8,12,.42) 34%,rgba(8,8,12,.78) 72%,rgba(8,8,12,.98) 100%)}
-  .profile-header{position:relative;z-index:1;padding:180px 20px 28px}
-  .profile-info{max-width:900px;padding-top:18px}
-  .profile-name{font-size:38px;line-height:1.05;font-weight:800;color:#f1f1f1;margin-bottom:8px;text-shadow:0 4px 18px rgba(0,0,0,.4)}
-  .profile-full-name{font-size:14px;color:#aaa;margin-bottom:12px}
-  .profile-meta{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;color:#aaa;margin-bottom:12px}
-  .profile-meta-item{display:flex;gap:5px}
-  .profile-meta-label{color:#555;flex-shrink:0}
-  .profile-bio{font-size:13px;color:#aaa;line-height:1.6;max-width:600px;margin-bottom:12px}
-  .profile-posters{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;max-width:920px;margin:10px 0 14px}
-  .profile-poster{display:block;aspect-ratio:2/3;border-radius:12px;overflow:hidden;background:#1a1a20;border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 30px rgba(0,0,0,.25);cursor:pointer;padding:0;color:inherit;appearance:none}
-  .profile-poster img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .16s ease}
-  .profile-poster:hover img{transform:scale(1.03)}
-  .profile-links{display:flex;flex-wrap:wrap;gap:8px}
-  .profile-link{font-size:12px;color:#7af;background:#1a1a2e;border:1px solid #2a2a4e;padding:3px 10px;border-radius:3px;text-decoration:none;white-space:nowrap}
-  .profile-link:hover{background:#2a2a4e;text-decoration:none}
-  .section-header{padding:16px 20px 0;font-size:15px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em}
-  .poster-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1100;padding:20px;align-items:center;justify-content:center}
-  .poster-overlay.open{display:flex}
-  .poster-modal{position:relative;max-width:min(92vw,1100px);max-height:92vh}
-  .poster-modal img{display:block;max-width:100%;max-height:92vh;width:auto;height:auto;border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.55)}
-  .poster-close{position:absolute;top:12px;right:12px;background:rgba(0,0,0,.72);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
-  @media (max-width: 780px){
-    .profile-header{padding:148px 16px 22px}
-    .profile-info{padding-top:8px}
-    .profile-name{font-size:28px}
-  }
-  @media (max-width: 520px){
-    .profile-header{padding-top:132px}
-    .profile-name{font-size:24px}
-    .profile-posters{grid-template-columns:repeat(2,minmax(0,1fr))}
-  }
-{% endblock %}
-
-{% block topbar_form %}
-<form class="search-form" method="GET" action="/performer/{{ performer.uuid }}">
-  <input type="text" name="q" value="{{ q }}" placeholder="Search this performer's scenes…">
-  <select name="per_page">
-    {% for n in [30, 60, 90] %}
-    <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }}/page</option>
-    {% endfor %}
-  </select>
-  <button type="submit">Search</button>
-</form>
-{% endblock %}
+{% block title %}{{ performer.name }} — Library{% endblock %}
 
 {% block content %}
 {% set banner_sources = [] %}
@@ -55,50 +7,45 @@
   {% set bg = s.background_url or s.poster_url %}
   {% if bg %}{% set _ = banner_sources.append(bg) %}{% endif %}
 {% endfor %}
+{% set hero_bg = performer.thumbnail_url or performer.image_url or (banner_sources[0] if banner_sources else None) %}
 
-<div class="performer-hero"{% if banner_sources %} style="background-image: linear-gradient(90deg, rgba(12,12,18,.6) 0, rgba(12,12,18,.1) 35%, rgba(12,12,18,.55) 100%), {% for bg in banner_sources %}url('{{ bg }}'){% if not loop.last %}, {% endif %}{% endfor %};"{% else %} style="background-image: radial-gradient(circle at top left,#26263d 0,#121217 45%,#0c0c10 100%);"{% endif %}>
-  <div class="profile-header">
-    <div class="profile-info">
-      <div class="profile-name">{{ performer.name }}</div>
+<div class="hero-section">
+  {% if hero_bg %}
+  <div class="hero-bg" style="background-image:url('{{ hero_bg }}')"></div>
+  {% elif banner_sources %}
+  <div class="hero-bg" style="background-image:url('{{ banner_sources[0] }}')"></div>
+  {% endif %}
+  <div class="hero-content">
+    {% if performer.thumbnail_url or performer.image_url %}
+    <img class="hero-portrait" src="{{ performer.thumbnail_url or performer.image_url }}" alt="{{ performer.name }}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="hero-no-img" style="display:none">&#128100;</div>
+    {% else %}
+    <div class="hero-no-img">&#128100;</div>
+    {% endif %}
+    <div class="hero-info">
+      <div class="hero-name">{{ performer.name }}</div>
       {% if performer.full_name and performer.full_name != performer.name %}
-      <div class="profile-full-name">{{ performer.full_name }}</div>
+      <div class="hero-sub">{{ performer.full_name }}</div>
       {% endif %}
-
-      <div class="profile-meta">
-        {% if performer.gender %}<div class="profile-meta-item"><span class="profile-meta-label">Gender</span><span>{{ performer.gender }}</span></div>{% endif %}
-        {% if performer.birthday %}<div class="profile-meta-item"><span class="profile-meta-label">Born</span><span>{{ performer.birthday }}</span></div>{% endif %}
-        {% if performer.birthplace %}<div class="profile-meta-item"><span class="profile-meta-label">From</span><span>{{ performer.birthplace }}{% if performer.birthplace_code %} ({{ performer.birthplace_code }}){% endif %}</span></div>{% endif %}
-        {% if performer.ethnicity %}<div class="profile-meta-item"><span class="profile-meta-label">Ethnicity</span><span>{{ performer.ethnicity }}</span></div>{% endif %}
-        {% if performer.nationality %}<div class="profile-meta-item"><span class="profile-meta-label">Nationality</span><span>{{ performer.nationality }}</span></div>{% endif %}
-        {% if performer.hair_colour %}<div class="profile-meta-item"><span class="profile-meta-label">Hair</span><span>{{ performer.hair_colour }}</span></div>{% endif %}
-        {% if performer.eye_colour %}<div class="profile-meta-item"><span class="profile-meta-label">Eyes</span><span>{{ performer.eye_colour }}</span></div>{% endif %}
-        {% if performer.measurements %}<div class="profile-meta-item"><span class="profile-meta-label">Measurements</span><span>{{ performer.measurements }}{% if performer.cupsize %} ({{ performer.cupsize }}){% endif %}</span></div>{% endif %}
-        {% if performer.height %}<div class="profile-meta-item"><span class="profile-meta-label">Height</span><span>{{ performer.height }}</span></div>{% endif %}
-        {% if performer.weight %}<div class="profile-meta-item"><span class="profile-meta-label">Weight</span><span>{{ performer.weight }}</span></div>{% endif %}
-        {% if performer.career_start_year %}<div class="profile-meta-item"><span class="profile-meta-label">Career</span><span>{{ performer.career_start_year }}{% if performer.career_end_year %} – {{ performer.career_end_year }}{% endif %}</span></div>{% endif %}
-        {% if performer.rating %}<div class="profile-meta-item"><span class="profile-meta-label">Rating</span><span>{{ "%.1f"|format(performer.rating) }}</span></div>{% endif %}
+      <div class="hero-stats">
+        {% if performer.gender %}<span class="hero-stat"><span class="hero-stat-lbl">Gender</span><span class="hero-stat-val">{{ performer.gender }}</span></span>{% endif %}
+        {% if performer.birthday %}<span class="hero-stat"><span class="hero-stat-lbl">Born</span><span class="hero-stat-val">{{ performer.birthday }}</span></span>{% endif %}
+        {% if performer.birthplace %}<span class="hero-stat"><span class="hero-stat-lbl">From</span><span class="hero-stat-val">{{ performer.birthplace }}{% if performer.birthplace_code %} ({{ performer.birthplace_code }}){% endif %}</span></span>{% endif %}
+        {% if performer.ethnicity %}<span class="hero-stat"><span class="hero-stat-lbl">Ethnicity</span><span class="hero-stat-val">{{ performer.ethnicity }}</span></span>{% endif %}
+        {% if performer.hair_colour %}<span class="hero-stat"><span class="hero-stat-lbl">Hair</span><span class="hero-stat-val">{{ performer.hair_colour }}</span></span>{% endif %}
+        {% if performer.measurements %}<span class="hero-stat"><span class="hero-stat-lbl">Measurements</span><span class="hero-stat-val">{{ performer.measurements }}{% if performer.cupsize %} ({{ performer.cupsize }}){% endif %}</span></span>{% endif %}
+        {% if performer.height %}<span class="hero-stat"><span class="hero-stat-lbl">Height</span><span class="hero-stat-val">{{ performer.height }}</span></span>{% endif %}
+        {% if performer.weight %}<span class="hero-stat"><span class="hero-stat-lbl">Weight</span><span class="hero-stat-val">{{ performer.weight }}</span></span>{% endif %}
+        {% if performer.career_start_year %}<span class="hero-stat"><span class="hero-stat-lbl">Career</span><span class="hero-stat-val">{{ performer.career_start_year }}{% if performer.career_end_year %} – {{ performer.career_end_year }}{% endif %}</span></span>{% endif %}
+        {% if performer.rating %}<span class="hero-stat"><span class="hero-stat-lbl">Rating</span><span class="hero-stat-val">{{ "%.1f"|format(performer.rating) }}</span></span>{% endif %}
       </div>
-
       {% if performer.bio %}
-      <div class="profile-bio">{{ performer.bio }}</div>
+      <div class="hero-bio">{{ performer.bio }}</div>
       {% endif %}
-
-      {% if performer.poster_urls %}
-      <div class="profile-posters">
-        {% for url in performer.poster_urls %}
-        <button class="profile-poster" type="button" onclick="openPosterModal('{{ url }}')">
-          <img src="{{ url }}" alt="{{ performer.name }} poster {{ loop.index }}" loading="lazy" onerror="this.parentElement.style.display='none'">
-        </button>
-        {% endfor %}
-      </div>
-      {% endif %}
-
       {% if performer.links %}
-      <div class="profile-links">
+      <div class="hero-links">
         {% for key, url in performer.links.items() %}
-        {% if url %}
-        <a class="profile-link" href="{{ url }}" target="_blank" rel="noopener">{{ key }}</a>
-        {% endif %}
+        {% if url %}<a class="hero-link" href="{{ url }}" target="_blank" rel="noopener">{{ key }}</a>{% endif %}
         {% endfor %}
       </div>
       {% endif %}
@@ -106,50 +53,62 @@
   </div>
 </div>
 
-<div class="section-header">{{ total }} scene{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
+{% if performer.poster_urls %}
+<div class="section-head">Photos</div>
+<div class="poster-grid">
+  {% for url in performer.poster_urls %}
+  <button class="poster-btn" type="button" onclick="openPosterModal('{{ url }}')">
+    <img src="{{ url }}" alt="{{ performer.name }} poster {{ loop.index }}" loading="lazy" onerror="this.parentElement.style.display='none'">
+  </button>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="section-head">{{ total }} scene{{ "s" if total != 1 else "" }} with {{ performer.name }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
 
 {% if scenes %}
-<div class="grid">
+<div class="scene-grid">
   {% for s in scenes %}
-  <div class="card" onclick="openModal({{ loop.index0 }})">
-    <div class="card-thumb">
+  {% set max_seeds = s.max_seeders or 0 %}
+  <div class="sc-card" onclick="openModal({{ loop.index0 }})">
+    <div class="sc-thumb">
       {% set bg = s.background_url or s.poster_url %}
-      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% else %}<div class="no-img">No image</div>{% endif %}
-      {% if s.duration_human %}<div class="card-dur">{{ s.duration_human }}</div>{% endif %}
+      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% endif %}
+      <div class="sc-overlay"><div class="sc-play">&#9654;</div></div>
+      {% if s.duration_human %}<span class="sc-dur">{{ s.duration_human }}</span>{% endif %}
+      {% if s.format %}<span class="sc-res">{{ s.format }}</span>{% endif %}
     </div>
-    <div class="card-body">
-      {% if s.site_logo_url %}
-        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else None %}
-        {% if site_href %}
-        <a href="{{ site_href }}" onclick="event.stopPropagation()"><img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}"></a>
-        {% else %}
-        <img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}">
+    <div class="sc-body">
+      <div class="sc-site-row">
+        {% if s.site_logo_url %}
+        <img class="sc-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}" onerror="this.style.display='none'">
         {% endif %}
-      {% endif %}
-      <div class="card-title">{{ s.title or "(untitled)" }}</div>
-      {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
-      {% if s.description %}<div class="card-desc">{{ s.description }}</div>{% endif %}
-      <div class="card-meta">
-        <span>{{ s.date or "" }}</span>
-        {% if s.max_seeders %}<span class="card-seeds">{{ s.max_seeders }} seeds</span>{% endif %}
+        <span class="sc-site-name">{{ s.site_name or s.network_name or "" }}</span>
+      </div>
+      <div class="sc-title">{{ s.title or "(untitled)" }}</div>
+      {% if s.performers %}<div class="sc-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
+      <div class="sc-meta">
+        <span class="sc-date">{{ s.date or "" }}</span>
+        <span class="seeds-pill{% if max_seeds == 0 %} dead{% endif %}">{{ max_seeds }}S</span>
       </div>
       {% if s.torrents %}
-      <button class="card-dl-btn" onclick="event.stopPropagation();openModal({{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
+      <div class="sc-actions" onclick="event.stopPropagation()">
+        <button class="act-btn" onclick="openModal({{ loop.index0 }})">&#8659; {{ s.torrents | length }} torrent{{ "s" if s.torrents | length != 1 else "" }}</button>
+      </div>
       {% endif %}
     </div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<p style="padding:20px;color:#717171">No scenes found.</p>
+<p style="padding:24px;color:var(--t3)">No scenes found.</p>
 {% endif %}
 
-<div class="pagination">
-  {% if has_prev %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="disabled">&larr; Prev</span>{% endif %}
-  <span style="color:#717171">Page {{ page }} / {{ total_pages }}</span>
-  {% if has_next %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="disabled">Next &rarr;</span>{% endif %}
+<div class="pg-bar">
+  {% if has_prev %}<a class="pg-btn" href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="pg-btn disabled">&larr; Prev</span>{% endif %}
+  <span class="pg-info">Page {{ page }} / {{ total_pages }}</span>
+  {% if has_next %}<a class="pg-btn" href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="pg-btn disabled">Next &rarr;</span>{% endif %}
 </div>
-
 {% endblock %}
 
 {% block scene_modal %}
@@ -167,27 +126,20 @@
 {% include "_scene_modal_script.html" %}
 <script>
 function openPosterModal(url) {
-  const overlay = document.getElementById('poster-overlay');
-  const img = document.getElementById('poster-modal-img');
-  img.src = url;
-  overlay.classList.add('open');
+  document.getElementById('poster-modal-img').src = url;
+  document.getElementById('poster-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
-
 function closePosterModal() {
   document.getElementById('poster-overlay').classList.remove('open');
   document.getElementById('poster-modal-img').removeAttribute('src');
   document.body.style.overflow = '';
 }
-
 function closePosterModalOutside(e) {
   if (e.target === document.getElementById('poster-overlay')) closePosterModal();
 }
-
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && document.getElementById('poster-overlay').classList.contains('open')) {
-    closePosterModal();
-  }
+  if (e.key === 'Escape' && document.getElementById('poster-overlay').classList.contains('open')) closePosterModal();
 });
 </script>
 {% endblock %}

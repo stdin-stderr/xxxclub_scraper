@@ -800,6 +800,26 @@ def get_site(conn, uuid: str) -> dict | None:
         return dict(zip(cols, row))
 
 
+def list_networks(conn, query: str | None = None) -> list[dict]:
+    """Return networks with site counts, optionally filtered by name."""
+    sql = """
+        SELECT n.uuid, n.name, n.url, n.logo_url, n.rating,
+               COUNT(s.uuid) AS site_count
+        FROM networks n
+        LEFT JOIN sites s ON s.network_uuid = n.uuid
+        WHERE TRUE
+    """
+    params: list = []
+    if query:
+        sql += " AND n.name ILIKE %s"
+        params.append(f"%{query}%")
+    sql += " GROUP BY n.uuid, n.name, n.url, n.logo_url, n.rating ORDER BY n.name"
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
 def get_network(conn, uuid: str) -> dict | None:
     """Return network record with its sites by UUID, or None if not found."""
     with conn.cursor() as cur:

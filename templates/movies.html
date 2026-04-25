@@ -1,72 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Movie Browser{% endblock %}
-
-{% block topbar_form %}
-<form class="search-form" method="GET" action="/movies">
-  <input type="text" name="q" value="{{ q }}" placeholder="Search movies…">
-  <input type="date" name="date_from" value="{{ date_from }}" title="From">
-  <input type="date" name="date_to" value="{{ date_to }}" title="To">
-  <select name="sort_by">
-    {% for col, label in [("date","Release Date"),("seeders","Top Seeders"),("title","Title"),("site_name","Studio")] %}
-    <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
-  <select name="sort_order">
-    <option value="desc"{% if sort_order == "desc" %} selected{% endif %}>Desc</option>
-    <option value="asc"{% if sort_order == "asc" %} selected{% endif %}>Asc</option>
-  </select>
-  <select name="per_page">
-    {% for n in [30, 60, 90] %}
-    <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }}/page</option>
-    {% endfor %}
-  </select>
-  <button type="submit">Search</button>
-</form>
-{% endblock %}
+{% block title %}Movies — Library{% endblock %}
 
 {% block content %}
-<div class="quickbar">
-  <a href="/movies?sort_by=date&sort_order=desc">Latest</a>
-  <a href="/movies?sort_by=seeders&sort_order=desc">Top Movies</a>
-  <span class="sep">|</span>
-  <a href="/scenes">Scenes</a>
-  <a href="/torrents">Torrents</a>
+<div class="page-bar">
+  <span class="page-bar-title">Movies</span>
+  <span class="page-bar-count">{{ total }}</span>
+  <form class="search-wrap" method="GET" action="/movies" style="display:flex;gap:6px;max-width:none;flex:1;margin-left:auto;">
+    <div class="search-wrap" style="margin-left:0;flex:1;max-width:320px;">
+      <span class="search-ico">&#128269;</span>
+      <input class="search-input" type="text" name="q" value="{{ q }}" placeholder="Search movies…">
+    </div>
+    <input type="hidden" name="sort_by" value="{{ sort_by }}">
+    <input type="hidden" name="sort_order" value="{{ sort_order }}">
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+  </form>
 </div>
+
+<div class="filter-strip">
+  <a class="fpill{% if sort_by == 'date' and sort_order == 'desc' %} active{% endif %}" href="/movies?sort_by=date&sort_order=desc">Latest</a>
+  <a class="fpill{% if sort_by == 'seeders' and sort_order == 'desc' %} active{% endif %}" href="/movies?sort_by=seeders&sort_order=desc">Top Seeds</a>
+  <span class="fsep"></span>
+  <div class="adv-bar" style="padding:0;border:none;flex-wrap:nowrap;gap:6px;">
+    <form method="GET" action="/movies" style="display:contents">
+      <input type="hidden" name="q" value="{{ q }}">
+      <input class="adv-inp" type="date" name="date_from" value="{{ date_from }}" title="From">
+      <input class="adv-inp" type="date" name="date_to" value="{{ date_to }}" title="To">
+      <select class="adv-sel" name="sort_by">
+        {% for col, label in [("date","Release Date"),("seeders","Top Seeders"),("title","Title"),("site_name","Studio")] %}
+        <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select class="adv-sel" name="sort_order">
+        <option value="desc"{% if sort_order == "desc" %} selected{% endif %}>Desc</option>
+        <option value="asc"{% if sort_order == "asc" %} selected{% endif %}>Asc</option>
+      </select>
+      <select class="adv-sel" name="per_page">
+        {% for n in [30, 60, 90] %}
+        <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }}/page</option>
+        {% endfor %}
+      </select>
+      <button class="adv-go" type="submit">Search</button>
+    </form>
+  </div>
+</div>
+
 <div class="count-bar">{{ total }} movie{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
 
 {% if movies %}
-<div class="grid">
+<div class="scene-grid">
   {% for s in movies %}
-  <div class="card" onclick="openModal({{ loop.index0 }})">
-    <div class="card-thumb">
+  {% set max_seeds = s.max_seeders or 0 %}
+  <div class="sc-card" onclick="openModal({{ loop.index0 }})">
+    <div class="sc-thumb">
       {% set bg = s.background_url or s.poster_url %}
-      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% else %}<div class="no-img">No image</div>{% endif %}
-      {% if s.duration_human %}<div class="card-dur">{{ s.duration_human }}</div>{% endif %}
+      {% if bg %}<img src="{{ bg }}" alt="" loading="lazy">{% endif %}
+      <div class="sc-overlay"><div class="sc-play">&#9654;</div></div>
+      {% if s.duration_human %}<span class="sc-dur">{{ s.duration_human }}</span>{% endif %}
+      {% if s.format %}<span class="sc-res">{{ s.format }}</span>{% endif %}
     </div>
-    <div class="card-body">
-      {% if s.site_logo_url %}
-        {% set site_href = "/site/" ~ s.site_uuid if s.site_uuid else None %}
-        {% if site_href %}
-        <a href="{{ site_href }}" onclick="event.stopPropagation()"><img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}"></a>
-        {% else %}
-        <img class="card-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}">
+    <div class="sc-body">
+      <div class="sc-site-row">
+        {% if s.site_logo_url %}
+        <img class="sc-site-logo" src="{{ s.site_logo_url }}" alt="{{ s.site_name }}" onerror="this.style.display='none'">
         {% endif %}
-      {% endif %}
-      <div class="card-title">{{ s.title or "(untitled)" }}</div>
-      {% if s.performers %}<div class="card-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
-      {% if s.description %}<div class="card-desc">{{ s.description }}</div>{% endif %}
-      <div class="card-meta">
-        <span>{{ s.date or "" }}</span>
-        {% if s.format %}<span style="color:#717171">{{ s.format }}</span>{% endif %}
-        {% if s.max_seeders %}<span class="card-seeds">{{ s.max_seeders }} seeds</span>{% endif %}
+        <span class="sc-site-name">{{ s.site_name or s.network_name or "" }}</span>
       </div>
-      {% if s.torrents %}
-      <button class="card-dl-btn" onclick="event.stopPropagation();openModal({{ loop.index0 }})">&#8659; Download ({{ s.torrents | length }})</button>
-      {% endif %}
-      <div class="card-stremio-row" onclick="event.stopPropagation()">
-        <a class="card-stremio-btn" href="/stream/{{ s.id }}" style="background:#1a2a1a;color:#7c7;border-color:#2a4a2a">&#9654; Watch</a>
-        {% if stremio_enabled %}
-        <a class="card-stremio-btn" href="stremio:///detail/movie/xxxclub_{{ s.id }}">&#9654; Stremio</a>
+      <div class="sc-title">{{ s.title or "(untitled)" }}</div>
+      {% if s.performers %}<div class="sc-performers">{{ s.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
+      <div class="sc-meta">
+        <span class="sc-date">{{ s.date or "" }}</span>
+        <span class="sc-size"></span>
+        <span class="seeds-pill{% if max_seeds == 0 %} dead{% endif %}">{{ max_seeds }}S</span>
+      </div>
+      <div class="sc-actions" onclick="event.stopPropagation()">
+        <button class="act-btn" onclick="openModal({{ loop.index0 }})">&#8659; {{ s.torrents | length }} torrent{{ "s" if s.torrents | length != 1 else "" }}</button>
+        {% if s.id %}
+        <a class="act-btn stremio" href="/stream/{{ s.id }}" title="Watch" onclick="event.stopPropagation()">&#9654;</a>
         {% endif %}
       </div>
     </div>
@@ -74,20 +83,17 @@
   {% endfor %}
 </div>
 {% else %}
-<p style="padding:20px;color:#717171">No movies found.</p>
+<p style="padding:24px;color:var(--t3)">No movies found.</p>
 {% endif %}
 
-<div class="pagination">
-  {% if has_prev %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="disabled">&larr; Prev</span>{% endif %}
-  <span style="color:#717171">Page {{ page }} / {{ total_pages }}</span>
-  {% if has_next %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="disabled">Next &rarr;</span>{% endif %}
+<div class="pg-bar">
+  {% if has_prev %}<a class="pg-btn" href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="pg-btn disabled">&larr; Prev</span>{% endif %}
+  <span class="pg-info">Page {{ page }} / {{ total_pages }}</span>
+  {% if has_next %}<a class="pg-btn" href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="pg-btn disabled">Next &rarr;</span>{% endif %}
 </div>
 {% endblock %}
 
-{% block scene_modal %}
-{% include "_scene_modal.html" %}
-{% endblock %}
-
+{% block scene_modal %}{% include "_scene_modal.html" %}{% endblock %}
 {% block scripts %}
 {% set modal_items_json = movies_json %}
 {% include "_scene_modal_script.html" %}

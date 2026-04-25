@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Configure — Library{% endblock %}
+
+{% block content %}
+<style>
+.stremio-site-item{display:flex;align-items:center;gap:10px;padding:5px 6px;font-size:13px;cursor:pointer;border-radius:5px;}
+.stremio-site-item:hover{background:var(--s2);}
+.stremio-site-item input[type=checkbox]{width:auto;flex-shrink:0;accent-color:var(--acc);cursor:pointer;}
+.stremio-site-logo{width:24px;height:24px;object-fit:contain;border-radius:3px;flex-shrink:0;}
+.stremio-site-logo-placeholder{width:24px;height:24px;flex-shrink:0;}
+.install-row{display:flex;align-items:center;gap:8px;background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;margin-bottom:8px;}
+.install-url{flex:1;font-size:11px;color:var(--lnk);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+</style>
+<div class="page-bar" style="position:static;border-bottom:none;">
+  <span class="page-bar-title">Configure</span>
+</div>
+<div class="config-page">
+
+  <!-- Debrid Service -->
+  <div class="config-section">
+    <div class="config-section-title">Debrid Service</div>
+    <div class="debrid-grid" id="debrid-grid"></div>
+
+    <form id="debrid-form" style="display:flex;flex-direction:column;gap:12px;max-width:440px;">
+      <div class="config-field">
+        <label class="config-label" id="debrid-key-label">API Key</label>
+        <div class="config-hint">Find your key at <a id="debrid-key-link" href="#" target="_blank" rel="noreferrer" style="color:var(--lnk)"></a></div>
+        <div class="config-row">
+          <input class="config-input" id="debrid-key-input" type="password" placeholder="Paste your API key…" style="flex:1">
+        </div>
+      </div>
+      <div class="config-row">
+        <button type="submit" class="config-btn" id="debrid-connect-btn">Connect</button>
+        <button type="button" class="config-btn secondary" id="debrid-disconnect-btn" style="display:none">Disconnect</button>
+      </div>
+      <div class="config-status" id="debrid-status" style="display:none"></div>
+    </form>
+  </div>
+
+  <!-- Stremio Integration -->
+  <div class="config-section">
+    <div class="config-section-title">Stremio Integration</div>
+    {% if stremio_enabled %}
+    <div class="config-field" style="max-width:none">
+      <label class="config-label">Sites</label>
+      <div class="config-hint">Select sites to include in your Stremio addon. Leave empty to include all.</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:0">
+        <input class="config-input" id="site-search" placeholder="Search sites…" oninput="filterSites(this.value)"
+               style="border-radius:8px 8px 0 0;margin-bottom:0">
+        <button type="button" class="config-btn secondary" onclick="clearSites()" style="flex-shrink:0;align-self:stretch;border-radius:8px 8px 0 0;border-bottom:none">Clear all</button>
+      </div>
+      <div id="sites-list" style="max-height:240px;overflow-y:auto;background:var(--s1);border:1px solid var(--bd);border-top:none;border-radius:0 0 8px 8px;padding:6px">
+        <div style="color:var(--t3);font-size:12px;padding:6px">Loading sites…</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <button class="config-btn" onclick="buildLinks()">Generate Install Link</button>
+    </div>
+
+    <div id="install-block" style="display:none;margin-top:16px">
+      <div class="config-hint" style="margin-bottom:8px">Install this manifest URL in Stremio:</div>
+      <div class="install-row">
+        <span class="install-url" id="http-url"></span>
+        <button class="config-btn secondary" style="flex-shrink:0;padding:5px 14px;font-size:12px" onclick="copyUrl('http-url', this)">Copy</button>
+      </div>
+      <div class="install-row">
+        <span class="install-url" id="stremio-url"></span>
+        <button class="config-btn secondary" style="flex-shrink:0;padding:5px 14px;font-size:12px" onclick="copyUrl('stremio-url', this)">Copy</button>
+        <a class="config-btn" id="stremio-link" href="#" style="flex-shrink:0;padding:5px 14px;font-size:12px;text-decoration:none">Open in Stremio</a>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="config-hint">To enable the Stremio addon, set <code style="font-family:var(--mono);color:var(--t2)">STREMIO=true</code> in your environment and restart.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DEBRID_SERVICES = [
+  { id:'realdebrid', name:'Real-Debrid',  icon:'RD', desc:'Most popular. Great cache coverage.',    url:'https://real-debrid.com/apitoken',       color:'#c40000' },
+  { id:'alldebrid',  name:'All-Debrid',   icon:'AD', desc:'European service, solid EU cache.',     url:'https://alldebrid.com/apikeys',          color:'#f59e0b' },
+  { id:'torbox',     name:'TorBox',       icon:'TB', desc:'Fast torrent proxy & debrid.',          url:'https://torbox.app/settings',            color:'#6366f1' },
+  { id:'premiumize', name:'Premiumize',   icon:'PM', desc:'Premium cloud storage & debrid.',       url:'https://www.premiumize.me/account',      color:'#10b981' },
+  { id:'debridlink', name:'Debrid-Link',  icon:'DL', desc:'French service, growing cache.',        url:'https://debrid-link.com/webapp/#/key',   color:'#3b82f6' },
+  { id:'offcloud',   name:'Offcloud',     icon:'OC', desc:'Instant cloud downloader.',             url:'https://offcloud.com/#/account',         color:'#8b5cf6' },
+  { id:'pikpak',     name:'PikPak',       icon:'PP', desc:'Fast Asian CDN speeds.',                url:'https://mypikpak.com/',                  color:'#06b6d4' },
+  { id:'easydebrid', name:'EasyDebrid',   icon:'ED', desc:'Lightweight, no-frills debrid.',        url:'https://easydebrid.com/',                color:'#f97316' },
+];
+
+let saved = null;
+try { saved = JSON.parse(localStorage.getItem('debrid_config') || 'null'); } catch {}
+
+let selectedSvc = saved?.service || 'realdebrid';
+
+function renderGrid() {
+  const grid = document.getElementById('debrid-grid');
+  grid.innerHTML = '';
+  DEBRID_SERVICES.forEach(svc => {
+    const isSelected = svc.id === selectedSvc;
+    const isConnected = saved?.service === svc.id;
+    const card = document.createElement('div');
+    card.className = 'debrid-card' + (isSelected ? ' selected' : '') + (isConnected ? ' connected' : '');
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="debrid-icon" style="background:${svc.color}22;color:${svc.color}">${svc.icon}</div>
+        <div>
+          <div class="debrid-name">${svc.name}</div>
+          ${isConnected ? '<div class="debrid-badge">Connected</div>' : ''}
+        </div>
+      </div>
+      <div class="debrid-desc">${svc.desc}</div>
+    `;
+    card.onclick = () => { selectedSvc = svc.id; renderGrid(); updateForm(); };
+    grid.appendChild(card);
+  });
+}
+
+function updateForm() {
+  const svc = DEBRID_SERVICES.find(s => s.id === selectedSvc);
+  document.getElementById('debrid-key-label').textContent = 'API Key — ' + svc.name;
+  document.getElementById('debrid-key-link').href = svc.url;
+  document.getElementById('debrid-key-link').textContent = svc.url;
+  const keyInput = document.getElementById('debrid-key-input');
+  keyInput.value = (saved?.service === selectedSvc) ? (saved?.key || '') : '';
+  const connectBtn = document.getElementById('debrid-connect-btn');
+  const disconnectBtn = document.getElementById('debrid-disconnect-btn');
+  const isConnected = saved?.service === selectedSvc;
+  connectBtn.textContent = isConnected ? 'Reconnect' : 'Connect';
+  disconnectBtn.style.display = isConnected ? '' : 'none';
+  const statusEl = document.getElementById('debrid-status');
+  if (isConnected) {
+    statusEl.className = 'config-status ok';
+    statusEl.textContent = '✓ Connected to ' + svc.name;
+    statusEl.style.display = '';
+  } else {
+    statusEl.style.display = 'none';
+  }
+}
+
+document.getElementById('debrid-form').onsubmit = function(e) {
+  e.preventDefault();
+  const key = document.getElementById('debrid-key-input').value.trim();
+  if (!key) return;
+  const statusEl = document.getElementById('debrid-status');
+  statusEl.className = 'config-status loading';
+  statusEl.textContent = 'Testing connection…';
+  statusEl.style.display = '';
+  document.getElementById('debrid-connect-btn').textContent = 'Connecting…';
+  setTimeout(() => {
+    saved = { service: selectedSvc, key };
+    localStorage.setItem('debrid_config', JSON.stringify(saved));
+    renderGrid();
+    updateForm();
+  }, 800);
+};
+
+document.getElementById('debrid-disconnect-btn').onclick = function() {
+  localStorage.removeItem('debrid_config');
+  saved = null;
+  document.getElementById('debrid-key-input').value = '';
+  renderGrid();
+  updateForm();
+};
+
+renderGrid();
+updateForm();
+
+{% if stremio_enabled %}
+// Stremio site selector
+fetch('/api/v1/sites')
+  .then(r => r.json())
+  .then(data => {
+    const list = document.getElementById('sites-list');
+    const sites = data.sites || [];
+    if (!sites.length) { list.innerHTML = '<div style="color:var(--t3);font-size:12px;padding:6px">No sites found.</div>'; return; }
+    list.innerHTML = sites.map(s => {
+      const logo = s.logo_url
+        ? `<img class="stremio-site-logo" src="${s.logo_url}" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : `<span class="stremio-site-logo-placeholder"></span>`;
+      return `<label class="stremio-site-item" data-name="${(s.name||'').toLowerCase()}">
+        <input type="checkbox" value="${s.uuid}">
+        ${logo}
+        <span>${s.name}</span>
+      </label>`;
+    }).join('');
+    list.addEventListener('change', resetInstall);
+  })
+  .catch(() => {
+    document.getElementById('sites-list').innerHTML = '<div style="color:var(--t3);font-size:12px;padding:6px">Could not load sites.</div>';
+  });
+
+function filterSites(q) {
+  const term = q.toLowerCase();
+  document.querySelectorAll('#sites-list .stremio-site-item').forEach(el => {
+    el.style.display = el.dataset.name.includes(term) ? '' : 'none';
+  });
+}
+
+function clearSites() {
+  document.querySelectorAll('#sites-list input[type=checkbox]').forEach(el => el.checked = false);
+  resetInstall();
+}
+
+function resetInstall() {
+  document.getElementById('install-block').style.display = 'none';
+}
+
+function buildLinks() {
+  const cfg = {};
+  if (saved?.service && saved?.key) cfg.debrid = [{ service: saved.service, key: saved.key }];
+  const checked = [...document.querySelectorAll('#sites-list input:checked')].map(el => el.value);
+  if (checked.length) cfg.sites = checked;
+  const encoded = btoa(JSON.stringify(cfg)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  const webPort = location.port || (location.protocol === 'https:' ? '443' : '80');
+  const base = location.protocol + '//' + location.hostname + (webPort ? ':' + webPort : '');
+  const httpUrl = base + '/stremio/' + encoded + '/manifest.json';
+  const stremioUrl = 'stremio://' + location.hostname + (webPort ? ':' + webPort : '') + '/stremio/' + encoded + '/manifest.json';
+  document.getElementById('http-url').textContent = httpUrl;
+  document.getElementById('stremio-url').textContent = stremioUrl;
+  document.getElementById('stremio-link').href = stremioUrl;
+  document.getElementById('install-block').style.display = 'block';
+}
+
+function copyUrl(id, btn) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.style.color = 'var(--grn)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
+  });
+}
+{% endif %}
+</script>
+{% endblock %}

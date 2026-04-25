@@ -1,28 +1,28 @@
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
-  <div class="modal" id="modal">
+  <div class="modal-box" id="modal">
     <button class="modal-close" onclick="closeModal()">&#x2715;</button>
-    <div class="modal-hero" id="modal-hero"><img id="modal-img" src="" alt=""></div>
+    <img class="modal-hero-img" id="modal-img" src="" alt="" style="display:none">
     <div class="modal-body">
-      <div class="modal-title" id="modal-title"></div>
       <div class="modal-site-row">
-        <img class="modal-site-logo" id="modal-logo" src="" alt="">
+        <img class="modal-site-logo" id="modal-logo" src="" alt="" style="display:none">
         <a class="modal-site-name" id="modal-site-name" href="#"></a>
         <span class="modal-network" id="modal-network"></span>
         <span class="modal-dur" id="modal-dur"></span>
-        <span class="modal-format" id="modal-format" style="font-size:12px;color:#717171"></span>
+        <span class="modal-format" id="modal-format"></span>
         <span class="modal-date" id="modal-date"></span>
       </div>
+      <div class="modal-title" id="modal-title"></div>
       <div class="modal-performers" id="modal-performers"></div>
-      <div class="modal-tags" id="modal-tags"></div>
+      <div class="modal-tags-wrap" id="modal-tags"></div>
       <div class="modal-desc" id="modal-desc"></div>
-      <div class="modal-action-row" id="modal-action-row" style="display:none;gap:8px;margin-bottom:12px">
-        <a id="modal-watch-btn" href="#" style="flex:1;background:#1a2a1a;color:#7c7;border:1px solid #2a4a2a;border-radius:5px;padding:7px 0;font-size:12px;text-align:center;text-decoration:none">&#9654; Watch</a>
+      <div class="modal-action-row" id="modal-action-row" style="display:none">
+        <a id="modal-watch-btn" class="modal-watch-btn" href="#">&#9654; Watch</a>
         {% if stremio_enabled %}
-        <a id="modal-stremio-web" href="#" target="_blank" rel="noopener" style="flex:1;background:#12122a;color:#7af;border:1px solid #1e1e4a;border-radius:5px;padding:7px 0;font-size:12px;text-align:center;text-decoration:none">&#9654; Stremio Web</a>
-        <a id="modal-stremio-app" href="#" style="flex:1;background:#12122a;color:#7af;border:1px solid #1e1e4a;border-radius:5px;padding:7px 0;font-size:12px;text-align:center;text-decoration:none">&#9654; Stremio</a>
+        <a id="modal-stremio-web" class="modal-stremio-btn" href="#" target="_blank" rel="noopener">&#9889; Stremio Web</a>
+        <a id="modal-stremio-app" class="modal-stremio-btn" href="#">&#9889; Stremio</a>
         {% endif %}
       </div>
-      <div class="modal-dl-heading" id="modal-dl-heading">Downloads</div>
+      <div class="modal-dl-head" id="modal-dl-heading" style="display:none">Downloads</div>
       <div class="modal-torrents" id="modal-torrents"></div>
     </div>
   </div>

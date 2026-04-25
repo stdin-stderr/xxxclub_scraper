@@ -3,11 +3,11 @@
 const modalItems = JSON.parse(document.getElementById('modal-items-data').textContent);
 
 function fmt(b) {
-  if (b == null) return '\u2014';
+  if (b == null) return '—';
   const u = ['B','KB','MB','GB','TB'];
   let i = 0;
   while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
-  return b.toFixed(1) + '\u00a0' + u[i];
+  return b.toFixed(1) + ' ' + u[i];
 }
 
 function esc(s) {
@@ -20,10 +20,9 @@ function openModal(idx) {
   const overlay = document.getElementById('modal-overlay');
 
   const bg = s.background_url || s.poster_url || '';
-  const hero = document.getElementById('modal-hero');
-  const img = document.getElementById('modal-img');
-  if (bg) { img.src = bg; hero.style.display = ''; }
-  else { hero.style.display = 'none'; }
+  const heroImg = document.getElementById('modal-img');
+  if (bg) { heroImg.src = bg; heroImg.style.display = ''; }
+  else { heroImg.style.display = 'none'; }
 
   document.getElementById('modal-title').textContent = s.title || '(untitled)';
 
@@ -42,12 +41,11 @@ function openModal(idx) {
   const netEl = document.getElementById('modal-network');
   netEl.replaceChildren();
   if (s.network_name && s.network_name !== s.site_name) {
-    netEl.appendChild(document.createTextNode('/ '));
+    netEl.appendChild(document.createTextNode('· '));
     if (s.network_uuid) {
       const networkLink = document.createElement('a');
       networkLink.href = '/network/' + encodeURIComponent(s.network_uuid);
       networkLink.textContent = s.network_name;
-      networkLink.style.color = '#aaa';
       networkLink.onclick = () => closeModal();
       netEl.appendChild(networkLink);
     } else {
@@ -56,7 +54,7 @@ function openModal(idx) {
   }
 
   document.getElementById('modal-dur').textContent = s.duration_human || '';
-  document.getElementById('modal-format').textContent = s.format ? '\u00b7 ' + s.format : '';
+  document.getElementById('modal-format').textContent = s.format ? '· ' + s.format : '';
   document.getElementById('modal-date').textContent = s.date || '';
 
   const perf = document.getElementById('modal-performers');
@@ -68,7 +66,7 @@ function openModal(idx) {
       chip.href = p.uuid ? '/performer/' + encodeURIComponent(p.uuid) : '#';
       const img = document.createElement('img');
       if (p.image_url) { img.src = p.image_url; }
-      else { img.style.background = '#333'; }
+      else { img.style.background = 'var(--s3)'; }
       img.alt = p.name || '';
       img.onerror = function() { this.style.display = 'none'; };
       const name = document.createElement('span');
@@ -84,6 +82,7 @@ function openModal(idx) {
   tagsEl.innerHTML = '';
   (s.tags || []).forEach(t => {
     const sp = document.createElement('span');
+    sp.className = 'modal-tag';
     sp.textContent = t;
     tagsEl.appendChild(sp);
   });
@@ -99,12 +98,12 @@ function openModal(idx) {
       const sc = t.seeders > 0 ? ' class="seeds-good"' : '';
       html += `<tr>
         <td><a href="${esc(t.magnet)}" title="${esc(t.title)}">${esc(t.title)}</a></td>
-        <td>${esc(t.category||'')}</td>
-        <td style="color:#717171">${esc(t.resolution||'')}</td>
-        <td>${esc(fmt(t.size_bytes))}</td>
+        <td style="color:var(--t3)">${esc(t.category||'')}</td>
+        <td style="color:var(--t3)">${esc(t.resolution||'')}</td>
+        <td style="color:var(--t2)">${esc(fmt(t.size_bytes))}</td>
         <td${sc}>${t.seeders != null ? t.seeders : ''}</td>
-        <td style="color:#717171">${t.leechers != null ? t.leechers : ''}</td>
-        <td style="color:#717171">${esc(t.age_label||'')}</td>
+        <td style="color:var(--t3)">${t.leechers != null ? t.leechers : ''}</td>
+        <td style="color:var(--t3)">${esc(t.age_label||'')}</td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -123,6 +122,8 @@ function openModal(idx) {
     const stremioApp = document.getElementById('modal-stremio-app');
     if (stremioApp) stremioApp.href = 'stremio:///detail/movie/' + encodeURIComponent(sid);
     actionRow.style.display = 'flex';
+  } else if (actionRow) {
+    actionRow.style.display = 'none';
   }
 
   overlay.classList.add('open');

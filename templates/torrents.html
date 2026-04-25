@@ -1,162 +1,188 @@
 {% extends "base.html" %}
-{% block title %}Torrent Search{% endblock %}
-
-{% block extra_css %}
-  body { font-family: monospace; font-size: 14px; }
-  h1 { font-size: 1.2em; margin: 20px 20px 12px; }
-  form { margin: 0 20px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  form input[type=text] { background: #222; color: #ddd; border: 1px solid #444; padding: 4px 8px; font-family: monospace; font-size: 14px; width: 260px; }
-  form input[type=date] { background: #222; color: #ddd; border: 1px solid #444; padding: 4px 8px; font-family: monospace; font-size: 14px; }
-  form select { background: #222; color: #ddd; border: 1px solid #444; padding: 4px 6px; font-family: monospace; font-size: 14px; }
-  form button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 14px; font-family: monospace; font-size: 14px; cursor: pointer; }
-  form button:hover { background: #444; }
-  table { border-collapse: collapse; width: 100%; }
-  th { text-align: left; border-bottom: 1px solid #444; padding: 5px 8px; color: #aaa; white-space: nowrap; }
-  td { padding: 4px 8px; border-bottom: 1px solid #222; vertical-align: top; }
-  td.thumb { position: relative; width: 140px; min-width: 140px; height: 104px; }
-  td.thumb img { position: absolute; top: 4px; left: 0; width: 136px; height: 96px; object-fit: cover; border-radius: 3px; cursor: zoom-in; transition: width 0.15s ease, height 0.15s ease, box-shadow 0.15s ease; z-index: 1; }
-  td.thumb img:hover { width: 500px; height: auto; object-fit: unset; box-shadow: 0 4px 24px #000; z-index: 10; }
-  tr:nth-child(even) td { background: #181818; }
-  .muted { color: #666; }
-  .count { color: #888; margin: 0 20px 10px; font-size: 13px; }
-  .quickfilters { margin: 8px 20px 14px; display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
-  .quickfilters a { color: #aaa; background: #1e1e1e; border: 1px solid #333; padding: 2px 8px; border-radius: 3px; white-space: nowrap; }
-  .quickfilters a:hover { background: #2a2a2a; color: #ddd; text-decoration: none; }
-  .quickfilters .sep { color: #444; align-self: center; }
-  .scene-site { font-size: 11px; color: #888; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
-  .scene-site a { color: inherit; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
-  .scene-site a:hover { color: #ddd; }
-  .scene-site img { height: 14px; width: auto; vertical-align: middle; }
-  .scene-title { font-size: 12px; color: #aaa; margin-top: 2px; }
-  .scene-performers { font-size: 11px; color: #7af; margin-top: 2px; }
-  .scene-tags { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px; }
-  .scene-tags span { font-size: 10px; background: #1e2a1e; color: #7c7; border: 1px solid #334; padding: 1px 5px; border-radius: 2px; }
-  .scene-desc { font-size: 11px; color: #666; margin-top: 3px; max-width: 480px; line-height: 1.4; }
-  .site-link { color: #a8d; font-size: 12px; }
-  .pagination-wrap { margin: 14px 20px; display: flex; gap: 16px; align-items: center; }
-{% endblock %}
+{% block title %}Torrents — Library{% endblock %}
 
 {% block content %}
-<div class="quickfilters">
-  <a href="/torrents?sort_by=date_added&sort_order=desc">Latest</a>
-  <a href="/torrents?sort_by=seeders&sort_order=desc">Top All</a>
-  <span class="sep">|</span>
+<div class="page-bar">
+  <span class="page-bar-title">Torrents</span>
+  <span class="page-bar-count">{{ total }}</span>
+  <form class="search-wrap" method="GET" action="/torrents" id="torr-form" style="display:flex;gap:6px;max-width:none;flex:1;margin-left:auto;">
+    <div class="search-wrap" style="margin-left:0;flex:1;max-width:320px;">
+      <span class="search-ico">&#128269;</span>
+      <input class="search-input" type="text" name="q" value="{{ q }}" placeholder="Search title…">
+    </div>
+    <input type="hidden" name="site" value="{{ site }}">
+    <input type="hidden" name="date_from" value="{{ date_from }}">
+    <input type="hidden" name="date_to" value="{{ date_to }}">
+    <input type="hidden" name="category" value="{{ selected_category }}">
+    <input type="hidden" name="sort_by" value="{{ sort_by }}">
+    <input type="hidden" name="sort_order" value="{{ sort_order }}">
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+  </form>
+  <div class="view-toggle">
+    <button class="vt-btn{% if view != 'grid' %} active{% endif %}" onclick="setView('table')" title="Table">&#9776;</button>
+    <button class="vt-btn{% if view == 'grid' %} active{% endif %}" onclick="setView('grid')" title="Grid">&#8862;</button>
+  </div>
+</div>
+
+<div class="adv-bar">
+  <form method="GET" action="/torrents" style="display:contents">
+    <input class="adv-inp" type="text" name="q" value="{{ q }}" placeholder="Search title…" style="width:180px">
+    <input class="adv-inp" type="text" name="site" value="{{ site }}" placeholder="Filter by site…" style="width:130px">
+    <input class="adv-inp" type="date" name="date_from" value="{{ date_from }}" title="Release date from">
+    <input class="adv-inp" type="date" name="date_to" value="{{ date_to }}" title="Release date to">
+    <select class="adv-sel" name="category">
+      <option value="">All categories</option>
+      {% for cat in categories %}
+      <option value="{{ cat }}"{% if cat == selected_category %} selected{% endif %}>{{ cat }}</option>
+      {% endfor %}
+    </select>
+    <select class="adv-sel" name="sort_by">
+      {% for col, label in [("date_added","Date Added"),("release_date","Release Date"),("seeders","Seeders"),("leechers","Leechers"),("title","Title"),("size_bytes","Size")] %}
+      <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select class="adv-sel" name="sort_order">
+      <option value="desc"{% if sort_order == "desc" %} selected{% endif %}>Desc</option>
+      <option value="asc"{% if sort_order == "asc" %} selected{% endif %}>Asc</option>
+    </select>
+    <select class="adv-sel" name="per_page">
+      {% for n in [25, 50, 100] %}
+      <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }}/page</option>
+      {% endfor %}
+    </select>
+    <button class="adv-go" type="submit">Search</button>
+  </form>
+</div>
+
+<div class="filter-strip">
+  <a class="fpill{% if sort_by == 'date_added' and sort_order == 'desc' and not selected_category %} active{% endif %}" href="/torrents?sort_by=date_added&sort_order=desc">Latest</a>
+  <a class="fpill{% if sort_by == 'seeders' and sort_order == 'desc' and not selected_category %} active{% endif %}" href="/torrents?sort_by=seeders&sort_order=desc">Top Seeds</a>
   {% for cat in categories %}
-  <a href="/torrents?sort_by=seeders&sort_order=desc&category={{ cat | urlencode }}">Top {{ cat }}</a>
+  <a class="fpill{% if selected_category == cat %} active{% endif %}" href="/torrents?category={{ cat | urlencode }}&sort_by=date_added&sort_order=desc">{{ cat }}</a>
   {% endfor %}
 </div>
-<form method="GET" action="/torrents">
-  <input type="text" name="q" value="{{ q }}" placeholder="Search title…">
-  <input type="text" name="site" value="{{ site }}" placeholder="Filter by site…">
-  <input type="date" name="date_from" value="{{ date_from }}" title="Release date from">
-  <input type="date" name="date_to" value="{{ date_to }}" title="Release date to">
-  <select name="category">
-    <option value="">All categories</option>
-    {% for cat in categories %}
-    <option value="{{ cat }}"{% if cat == selected_category %} selected{% endif %}>{{ cat }}</option>
-    {% endfor %}
-  </select>
-  <select name="sort_by">
-    {% for col, label in [("date_added","Date Added"),("release_date","Release Date"),("seeders","Seeders"),("leechers","Leechers"),("title","Title"),("size_bytes","Size")] %}
-    <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
-  <select name="sort_order">
-    <option value="desc"{% if sort_order == "desc" %} selected{% endif %}>Desc</option>
-    <option value="asc"{% if sort_order == "asc" %} selected{% endif %}>Asc</option>
-  </select>
-  <select name="per_page">
-    {% for n in [25, 50, 100] %}
-    <option value="{{ n }}"{% if n == per_page %} selected{% endif %}>{{ n }} / page</option>
-    {% endfor %}
-  </select>
-  <button type="submit">Search</button>
-</form>
-<div class="count">{{ total }} result{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
+
+<div class="count-bar">{{ total }} result{{ "s" if total != 1 else "" }}{% if total > 0 %} &mdash; page {{ page }} of {{ total_pages }}{% endif %}</div>
+
 {% if torrents %}
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Title</th>
-      <th>Site</th>
-      <th>Release</th>
-      <th>Category</th>
-      <th>Res</th>
-      <th>Size</th>
-      <th>Seeders</th>
-      <th>Leechers</th>
-      <th>Date Added</th>
-      <th>Uploader</th>
-    </tr>
-  </thead>
-  <tbody>
+<div id="view-grid" {% if view != 'grid' %}style="display:none"{% endif %}>
+  <div class="scene-grid">
     {% for t in torrents %}
-    <tr>
-      <td class="thumb">
+    {% set seeds = t.seeders or 0 %}
+    <div class="sc-card" onclick="openTorrentModal({{ loop.index0 }})">
+      <div class="sc-thumb">
         {% set poster = t.background_url or t.poster_url or t.image_url %}
-        {% if poster %}<img src="{{ poster }}" alt="">{% endif %}
-      </td>
-      <td>
-        <a href="{{ t.magnet }}" title="{{ t.title }}">{{ t.title }}</a>
-        {% set display_title = t.scene_title or t.meta_title %}
-        {% if display_title %}
-        <div class="scene-title">{{ display_title }}</div>
-        {% endif %}
-        {% set display_site = t.site_name or t.network_name or t.sitename %}
-        {% if display_site %}
-        <div class="scene-site">
-          {% set site_href = "/site/" ~ t.site_uuid if t.site_uuid else None %}
+        {% if poster %}<img src="{{ poster }}" alt="" loading="lazy">{% endif %}
+        <div class="sc-overlay"><div class="sc-play">&#9654;</div></div>
+        {% if t.resolution %}<span class="sc-res">{{ t.resolution }}</span>{% endif %}
+        {% if t.category %}<span class="sc-dur">{{ t.category }}</span>{% endif %}
+      </div>
+      <div class="sc-body">
+        <div class="sc-site-row">
           {% set logo = t.site_logo_url or t.network_logo_url %}
-          {% if site_href %}
-            <a href="{{ site_href }}">
-              {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
-              {{ display_site }}
-            </a>
-          {% else %}
-            {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
-            {{ display_site }}
-          {% endif %}
+          {% if logo %}<img class="sc-site-logo" src="{{ logo }}" alt="" onerror="this.style.display='none'">{% endif %}
+          <span class="sc-site-name">{{ t.sitename or t.site_name or "" }}</span>
         </div>
+        <div class="sc-title">{{ t.scene_title or t.meta_title or t.title }}</div>
+        {% if t.performers %}<div class="sc-performers">{{ t.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
+        {% set raw = t.title %}
+        {% if raw and raw != (t.scene_title or t.meta_title) %}
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ raw }}">{{ raw }}</div>
         {% endif %}
-        {% if t.performers %}
-        <div class="scene-performers">{{ t.performers | map(attribute="name") | list | join(", ") }}</div>
-        {% endif %}
-        {% if t.tags %}
-        <div class="scene-tags">{% for tag in t.tags[:8] %}<span>{{ tag }}</span>{% endfor %}</div>
-        {% endif %}
-        {% if t.scene_description %}
-        <div class="scene-desc">{{ t.scene_description[:200] }}{% if t.scene_description | length > 200 %}…{% endif %}</div>
-        {% endif %}
-      </td>
-      <td>
-        {% set site_label = t.sitename or t.site_name %}
-        {% if site_label %}
-          {% if t.site_uuid %}
-        <a href="/site/{{ t.site_uuid }}" class="site-link">{{ site_label }}</a>
-          {% else %}
-        <span class="site-link">{{ site_label }}</span>
-          {% endif %}
-        {% endif %}
-      </td>
-      <td class="muted">{{ t.release_date or "" }}</td>
-      <td>{{ t.category or "" }}</td>
-      <td class="muted">{{ t.resolution or "" }}</td>
-      <td>{{ t.size_human }}</td>
-      <td>{{ t.seeders if t.seeders is not none else "" }}</td>
-      <td>{{ t.leechers if t.leechers is not none else "" }}</td>
-      <td>{{ t.date_label }}</td>
-      <td>{{ t.uploader or "" }}</td>
-    </tr>
+        <div class="sc-meta">
+          <span class="sc-date">{{ t.release_date or t.date_label or "" }}</span>
+          <span class="sc-size">{{ t.size_human }}</span>
+          <span class="seeds-pill{% if seeds == 0 %} dead{% endif %}">{{ seeds }}S</span>
+        </div>
+        <div class="sc-actions" onclick="event.stopPropagation()">
+          <a class="act-btn" href="{{ t.magnet }}">&#8659; Magnet</a>
+        </div>
+      </div>
+    </div>
     {% endfor %}
-  </tbody>
-</table>
-<div class="pagination-wrap">
-  {% if has_prev %}<a href="{{ prev_url }}">&larr; Prev</a>{% else %}<span style="color:#555">&larr; Prev</span>{% endif %}
-  <span style="color:#888">Page {{ page }} / {{ total_pages }}</span>
-  {% if has_next %}<a href="{{ next_url }}">Next &rarr;</a>{% else %}<span style="color:#555">Next &rarr;</span>{% endif %}
+  </div>
+</div>
+
+<div id="view-table" {% if view == 'grid' %}style="display:none"{% endif %}>
+  <div class="torr-wrap">
+    <table class="torr-table">
+      <thead>
+        <tr>
+          <th style="width:120px"></th>
+          <th>Title</th>
+          <th>Site</th>
+          <th>Release</th>
+          <th>Cat</th>
+          <th>Res</th>
+          <th>Size</th>
+          <th>Seeds</th>
+          <th>Added</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in torrents %}
+        <tr>
+          <td>
+            {% set poster = t.background_url or t.poster_url or t.image_url %}
+            {% if poster %}<img class="t-thumb-img" src="{{ poster }}" alt="" loading="lazy">{% endif %}
+          </td>
+          <td>
+            <div class="t-scene-title">{{ t.scene_title or t.meta_title or t.title }}</div>
+            {% if t.performers %}<div class="t-scene-perfs">{{ t.performers | map(attribute="name") | list | join(", ") }}</div>{% endif %}
+            {% set raw = t.title %}
+            {% if raw and raw != (t.scene_title or t.meta_title) %}
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:3px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ raw }}">{{ raw }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {% set site_label = t.sitename or t.site_name %}
+            {% if site_label %}
+              {% if t.site_uuid %}
+              <a class="t-site" href="/site/{{ t.site_uuid }}">{{ site_label }}</a>
+              {% else %}
+              <span class="t-site">{{ site_label }}</span>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td><span class="t-meta-txt">{{ t.release_date or "" }}</span></td>
+          <td><span class="t-meta-txt">{{ t.category or "" }}</span></td>
+          <td><span class="t-meta-txt">{{ t.resolution or "" }}</span></td>
+          <td><span class="t-meta-txt">{{ t.size_human }}</span></td>
+          <td><span class="{% if t.seeders and t.seeders > 0 %}t-seeds-g{% else %}t-seeds-d{% endif %}">{{ t.seeders if t.seeders is not none else "" }}</span></td>
+          <td><span class="t-meta-txt">{{ t.date_label }}</span></td>
+          <td><a class="t-dl-btn" href="{{ t.magnet }}">&#8659;</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% else %}
-<p style="padding:0 20px;color:#666">No results.</p>
+<p style="padding:24px;color:var(--t3)">No results.</p>
 {% endif %}
+
+<div class="pg-bar">
+  {% if has_prev %}<a class="pg-btn" href="{{ prev_url }}">&larr; Prev</a>{% else %}<span class="pg-btn disabled">&larr; Prev</span>{% endif %}
+  <span class="pg-info">Page {{ page }} / {{ total_pages }}</span>
+  {% if has_next %}<a class="pg-btn" href="{{ next_url }}">Next &rarr;</a>{% else %}<span class="pg-btn disabled">Next &rarr;</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TORRENT_VIEW_KEY = 'torrent_view';
+function setView(v) {
+  localStorage.setItem(TORRENT_VIEW_KEY, v);
+  document.getElementById('view-grid').style.display = v === 'grid' ? '' : 'none';
+  document.getElementById('view-table').style.display = v === 'table' ? '' : 'none';
+  document.querySelectorAll('.vt-btn').forEach(b => b.classList.toggle('active', b.title.toLowerCase() === (v === 'grid' ? 'grid' : 'table')));
+}
+(function() {
+  const stored = localStorage.getItem(TORRENT_VIEW_KEY);
+  if (stored && stored !== '{{ view }}') setView(stored);
+})();
+
+function openTorrentModal(idx) { /* no modal on torrents page */ }
+</script>
 {% endblock %}
