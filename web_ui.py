@@ -513,6 +513,27 @@ def streams_url(service: str, info_hash: str, key: str = Query(default="")):
         return JSONResponse({"status": "error", "message": str(e)})
 
 
+@app.post("/api/v1/queue-stream")
+async def queue_stream(request: Request):
+    """Queue an uncached stream for download with debrid service."""
+    body = await request.json()
+    service = body.get("service", "")
+    key = body.get("key", "")
+    magnet = body.get("magnet", "")
+    if not service or not key or not magnet:
+        raise HTTPException(status_code=400, detail="service, key, and magnet required")
+    try:
+        client = debrid.DebridClient(service, key)
+        url = client.get_stream_url(magnet)
+        return JSONResponse({"status": "ok", "url": url})
+    except debrid.DebridPendingError:
+        return JSONResponse({"status": "queued", "check_after_seconds": 30})
+    except debrid.DebridAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except debrid.DebridError as e:
+        return JSONResponse({"status": "error", "message": str(e)})
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("WEB_PORT", 5000))

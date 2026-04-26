@@ -16,6 +16,10 @@
   .watch-player-wrap video.visible + .watch-poster,
   .watch-player-wrap video.visible + .watch-poster + .watch-play-overlay{display:none;}
 
+  /* Loader spinner */
+  @keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+  .stream-item-loader{animation:spin 1s linear infinite;}
+
   /* Scene info */
   .watch-info{padding:18px 20px 14px;background:var(--s1);border-bottom:1px solid var(--bd);}
   .watch-site-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
@@ -235,7 +239,7 @@ async function loadStreams(cfg) {
   const hashes = (scene.torrents || []).map(t => t.info_hash);
   if (!hashes.length) {
     document.getElementById('stream-loading').textContent = 'No torrents found for this scene.';
-    return;
+    return {};
   }
 
   let cached = {};
@@ -250,18 +254,18 @@ async function loadStreams(cfg) {
         setStatus('Authentication failed — check your API key.');
         localStorage.removeItem(STORAGE_KEY);
         setTimeout(showSetup, 1800);
-        return;
+        return {};
       }
       const err = await resp.json().catch(() => ({}));
       setStatus('Cache check failed: ' + (err.detail || resp.status));
       document.getElementById('stream-loading').style.display = 'none';
-      return;
+      return {};
     }
     cached = await resp.json();
   } catch (e) {
     setStatus('Network error: ' + e.message);
     document.getElementById('stream-loading').style.display = 'none';
-    return;
+    return {};
   }
 
   const torrents = [...(scene.torrents || [])];
@@ -296,21 +300,143 @@ async function loadStreams(cfg) {
   });
 
   document.getElementById('stream-hint').style.display = '';
+  return cached;
+}
+
+let pollInterval = null;
+const POLLING_STATE_KEY = 'stream_polling_state';
+
+function savePollState(sceneId, torrentHash, cfg) {
+  localStorage.setItem(POLLING_STATE_KEY, JSON.stringify({sceneId, torrentHash, service: cfg.service, key: cfg.key}));
+}
+
+function clearPollState() {
+  localStorage.removeItem(POLLING_STATE_KEY);
+}
+
+function getPollState() {
+  try {
+    return JSON.parse(localStorage.getItem(POLLING_STATE_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function showLoaderIcon(item) {
+  const icon = item.querySelector('.stream-item-icon');
+  if (icon) {
+    icon.textContent = '⏳';
+    icon.classList.add('stream-item-loader');
+  }
+}
+
+function hideLoaderIcon(item) {
+  const icon = item.querySelector('.stream-item-icon');
+  if (icon) {
+    icon.classList.remove('stream-item-loader');
+  }
 }
 
 async function playStream(cfg, torrent, isCached, item) {
   if (!isCached) {
-    const existing = document.getElementById('stream-queue-msg');
-    if (existing) existing.remove();
-    const msg = document.createElement('div');
-    msg.id = 'stream-queue-msg';
-    msg.className = 'stream-error-msg';
-    msg.style.color = 'var(--t2)';
-    msg.style.background = 'rgba(88,84,112,.12)';
-    msg.style.borderColor = 'var(--bd)';
-    msg.textContent = 'Not cached — queuing for download. Try again in a few minutes.';
-    item.insertAdjacentElement('afterend', msg);
-    setTimeout(() => msg.remove(), 5000);
+    document.querySelectorAll('#stream-list .stream-item.playing').forEach(r => r.classList.remove('playing'));
+    item.classList.add('playing');
+    setStatus('');
+    document.getElementById('play-label').textContent = 'Queuing download…';
+
+    // Stop any existing polling
+    if (pollInterval) clearInterval(pollInterval);
+
+    // Show loader icon
+    showLoaderIcon(item);
+
+    // Queue the stream with debrid service
+    try {
+      const resp = await fetch('/api/v1/queue-stream', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({service: cfg.service, key: cfg.key, magnet: torrent.magnet})
+      });
+      if (resp.status === 401) {
+        setStatus('Authentication failed — check your API key.');
+        localStorage.removeItem(STORAGE_KEY);
+        clearPollState();
+        setTimeout(showSetup, 1800);
+        item.classList.remove('playing');
+        hideLoaderIcon(item);
+        document.getElementById('play-label').textContent = 'Select a stream →';
+        return;
+      }
+      const queueData = await resp.json();
+      if (queueData.status === 'ok' && queueData.url) {
+        // Magnet resolved immediately, play it
+        hideLoaderIcon(item);
+        clearPollState();
+        playUrl(queueData.url);
+        return;
+      }
+      if (queueData.status === 'queued') {
+        setStatus('Download queued. Checking status…');
+        document.getElementById('play-label').textContent = 'Download queuing…';
+
+        // Save polling state to survive page refresh
+        savePollState(scene.id, torrent.info_hash, cfg);
+
+        // Poll cache status every 5 seconds
+        const startTime = Date.now();
+        const timeoutMs = 10 * 60 * 1000; // 10 minute timeout
+
+        pollInterval = setInterval(async () => {
+          if (Date.now() - startTime > timeoutMs) {
+            clearInterval(pollInterval);
+            clearPollState();
+            hideLoaderIcon(item);
+            setStatus('Download did not complete in time.');
+            item.classList.remove('playing');
+            document.getElementById('play-label').textContent = 'Select a stream →';
+            return;
+          }
+
+          try {
+            // Re-check cache status with debrid service
+            const checkResp = await fetch('/api/streams/check', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({service: cfg.service, key: cfg.key, hashes: [torrent.info_hash]})
+            });
+            if (checkResp.ok) {
+              const cached = await checkResp.json();
+              if (cached[torrent.info_hash]) {
+                // Stream is now cached, try to play it
+                clearInterval(pollInterval);
+                clearPollState();
+                hideLoaderIcon(item);
+                setStatus('Download complete. Playing…');
+                playStream(cfg, torrent, true, item);
+              }
+            }
+          } catch (e) {
+            // Silently continue polling on error
+          }
+        }, 15000);
+        return;
+      }
+      if (queueData.status === 'error') {
+        setStatus('Failed to queue: ' + (queueData.message || 'unknown error'));
+        item.classList.remove('playing');
+        hideLoaderIcon(item);
+        clearPollState();
+        document.getElementById('play-label').textContent = 'Select a stream →';
+        return;
+      }
+    } catch (e) {
+      setStatus('Network error: ' + e.message);
+      item.classList.remove('playing');
+      hideLoaderIcon(item);
+      clearPollState();
+      document.getElementById('play-label').textContent = 'Select a stream →';
+      return;
+    }
     return;
   }
 
@@ -355,8 +481,12 @@ async function playStream(cfg, torrent, isCached, item) {
     return;
   }
 
+  playUrl(data.url);
+}
+
+function playUrl(url) {
   const player = document.getElementById('player');
-  player.src = data.url;
+  player.src = url;
   player.style.display = '';
   const poster = document.getElementById('watch-poster');
   const overlay = document.getElementById('play-overlay');
@@ -397,7 +527,71 @@ if (savedCfg?.service) {
 
 if (savedCfg && savedCfg.service && savedCfg.key) {
   document.getElementById('api-key-input').value = savedCfg.key;
-  loadStreams(savedCfg);
+
+  // Load streams and check for polling state to resume
+  (async () => {
+    const cached = await loadStreams(savedCfg);
+
+    // Check if there's an active polling state from a previous page load
+    const pollState = getPollState();
+    if (pollState && pollState.sceneId === scene.id && pollState.service === savedCfg.service) {
+      const torrentHash = pollState.torrentHash;
+
+      // Check if this torrent is now cached
+      if (cached[torrentHash]) {
+        // Already cached, clear the polling state and don't resume
+        clearPollState();
+      } else {
+        // Still downloading, resume polling
+        const torrent = (scene.torrents || []).find(t => t.info_hash === torrentHash);
+        const item = document.querySelector(`[data-hash="${torrentHash}"]`);
+
+        if (torrent && item) {
+          showLoaderIcon(item);
+          item.classList.add('playing');
+          setStatus('Resume download. Checking status…');
+
+          const cfg = {service: pollState.service, key: pollState.key};
+          const startTime = Date.now();
+          const timeoutMs = 10 * 60 * 1000;
+
+          pollInterval = setInterval(async () => {
+            if (Date.now() - startTime > timeoutMs) {
+              clearInterval(pollInterval);
+              clearPollState();
+              hideLoaderIcon(item);
+              setStatus('Download did not complete in time.');
+              item.classList.remove('playing');
+              return;
+            }
+
+            try {
+              const checkResp = await fetch('/api/streams/check', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({service: cfg.service, key: cfg.key, hashes: [torrent.info_hash]})
+              });
+              if (checkResp.ok) {
+                const cachedStatus = await checkResp.json();
+                if (cachedStatus[torrent.info_hash]) {
+                  clearInterval(pollInterval);
+                  clearPollState();
+                  hideLoaderIcon(item);
+                  setStatus('Download complete. Playing…');
+                  playStream(cfg, torrent, true, item);
+                }
+              }
+            } catch (e) {
+              // Silently continue polling
+            }
+          }, 15000);
+        } else {
+          // Can't find torrent or item, clear the polling state
+          clearPollState();
+        }
+      }
+    }
+  })();
 } else {
   showSetup();
 }
