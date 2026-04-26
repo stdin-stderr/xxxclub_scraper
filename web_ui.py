@@ -117,8 +117,6 @@ def index():
 @app.get("/scenes", response_class=HTMLResponse)
 def scenes_ui(
     q: str = Query(default=""),
-    date_from: str = Query(default=""),
-    date_to: str = Query(default=""),
     sort_by: str = Query(default="date"),
     sort_order: str = Query(default="desc"),
     per_page: int = Query(default=30),
@@ -126,8 +124,7 @@ def scenes_ui(
 ):
     limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
     data = _api_get("/api/v1/scenes", {
-        "q": q, "date_from": date_from, "date_to": date_to,
-        "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
+        "q": q, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
     })
     scenes = data["items"]
     total = data["total"]
@@ -135,15 +132,14 @@ def scenes_ui(
     _enrich_scenes(scenes)
 
     base_args = {
-        "q": q, "date_from": date_from, "date_to": date_to,
-        "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
+        "q": q, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
     }
     return HTMLResponse(_render(
         "scenes.html",
         active_page="scenes",
         scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
-        q=q, date_from=date_from, date_to=date_to,
+        q=q,
         sort_by=sort_by, sort_order=sort_order, per_page=limit,
         page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
@@ -155,8 +151,6 @@ def scenes_ui(
 @app.get("/movies", response_class=HTMLResponse)
 def movies_ui(
     q: str = Query(default=""),
-    date_from: str = Query(default=""),
-    date_to: str = Query(default=""),
     sort_by: str = Query(default="date"),
     sort_order: str = Query(default="desc"),
     per_page: int = Query(default=30),
@@ -164,8 +158,7 @@ def movies_ui(
 ):
     limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
     data = _api_get("/api/v1/movies", {
-        "q": q, "date_from": date_from, "date_to": date_to,
-        "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
+        "q": q, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
     })
     movies = data["items"]
     total = data["total"]
@@ -173,15 +166,14 @@ def movies_ui(
     _enrich_scenes(movies)
 
     base_args = {
-        "q": q, "date_from": date_from, "date_to": date_to,
-        "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
+        "q": q, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
     }
     return HTMLResponse(_render(
         "movies.html",
         active_page="movies",
         movies=movies,
         movies_json=json.dumps(movies).replace("</", "<\\/"),
-        q=q, date_from=date_from, date_to=date_to,
+        q=q,
         sort_by=sort_by, sort_order=sort_order, per_page=limit,
         page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
@@ -194,8 +186,6 @@ def movies_ui(
 def torrents_ui(
     q: str = Query(default=""),
     site: str = Query(default=""),
-    date_from: str = Query(default="2020-01-01"),
-    date_to: str = Query(default=""),
     category: str = Query(default=""),
     sort_by: str = Query(default="date_added"),
     sort_order: str = Query(default="desc"),
@@ -204,7 +194,7 @@ def torrents_ui(
 ):
     limit = per_page if per_page in VALID_PER_PAGE_TORRENTS else 25
     data = _api_get("/api/v1/torrents", {
-        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "q": q, "site": site,
         "category": category, "sort_by": sort_by, "sort_order": sort_order,
         "per_page": limit, "page": page,
     })
@@ -217,7 +207,7 @@ def torrents_ui(
         t["date_label"] = format_date(t.get("date_added"))
 
     base_args = {
-        "q": q, "site": site, "date_from": date_from, "date_to": date_to,
+        "q": q, "site": site,
         "category": category, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
     }
     return HTMLResponse(_render(
@@ -225,7 +215,7 @@ def torrents_ui(
         active_page="torrents",
         torrents=torrents,
         categories=cats["categories"],
-        q=q, site=site, date_from=date_from, date_to=date_to,
+        q=q, site=site,
         selected_category=category, sort_by=sort_by, sort_order=sort_order, per_page=limit,
         view="table",
         page=page, total=total, total_pages=total_pages,
@@ -420,10 +410,17 @@ def networks_ui(q: str = Query(default="")):
 @app.get("/configure", response_class=HTMLResponse)
 def configure_ui(request: Request):
     base = str(request.base_url)
+    sites = []
+    if bool(os.environ.get("STREMIO")):
+        try:
+            sites = _api_get("/api/v1/sites", {}).get("sites", [])
+        except Exception:
+            pass
     return HTMLResponse(_render(
         "configure.html",
         active_page="configure",
         request_base_url=base,
+        sites=sites,
     ))
 
 

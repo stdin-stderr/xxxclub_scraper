@@ -164,7 +164,7 @@ def list_movies(
 def list_torrents(
     q: str = Query(default=""),
     site: str = Query(default=""),
-    date_from: str = Query(default="2020-01-01"),
+    date_from: str = Query(default=""),
     date_to: str = Query(default=""),
     category: str = Query(default=""),
     sort_by: str = Query(default="date_added"),
@@ -178,7 +178,7 @@ def list_torrents(
         raise HTTPException(status_code=422, detail="sort_order must be 'asc' or 'desc'")
     limit = max(1, min(per_page, MAX_PER_PAGE))
     offset = (page - 1) * limit
-    effective_date_to = date_to or date.today().isoformat()
+    effective_date_to = date_to
     use_cache = not q
     key = cache.make_key(
         "torrents", site=site, category=category,

@@ -24,8 +24,6 @@
   <div class="adv-bar" style="padding:0;border:none;flex-wrap:nowrap;gap:6px;">
     <form method="GET" action="/scenes" style="display:contents">
       <input type="hidden" name="q" value="{{ q }}">
-      <input class="adv-inp" type="date" name="date_from" value="{{ date_from }}" title="From">
-      <input class="adv-inp" type="date" name="date_to" value="{{ date_to }}" title="To">
       <select class="adv-sel" name="sort_by">
         {% for col, label in [("date","Release Date"),("date_added","Torrent Added"),("seeders","Top Seeders"),("title","Title"),("site_name","Site")] %}
         <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>

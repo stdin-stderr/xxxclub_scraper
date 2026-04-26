@@ -2,9 +2,7 @@ import base64
 import json
 import logging
 import os
-from urllib.parse import parse_qs, quote, unquote
-
-import httpx
+from urllib.parse import parse_qs
 import requests as req_lib
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -38,7 +36,7 @@ MANIFEST = {
         {
             "type": "movie",
             "id": "xxxclub-torrents",
-            "name": "New Torrent Releases",
+            "name": "New Available",
             "extra": [{"name": "skip"}],
         },
         {
@@ -236,248 +234,40 @@ def manifest(config: str):
     return JSONResponse(content=_build_manifest(_decode_config(config)))
 
 
+
 # ─── Configure ───────────────────────────────────────────────────────────────
 
-# Service options built from DebridClient.SUPPORTED_SERVICES so there is a
-# single source of truth.
-_SVC_OPTIONS = "".join(
-    f'<option value="{svc}">{meta["name"]}</option>'
-    for svc, meta in debrid.DebridClient.SUPPORTED_SERVICES.items()
-)
-
-_CONFIGURE_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>xxxclub Stremio Addon — Configure</title>
-<style>
-  body {{ font-family: system-ui, sans-serif; background: #111; color: #eee;
-         max-width: 580px; margin: 60px auto; padding: 0 20px; }}
-  h1 {{ font-size: 1.4rem; margin-bottom: 1.5rem; }}
-  label {{ display: block; font-size: .85rem; color: #aaa; margin-bottom: 4px; }}
-  input[type=text], input[type=password] {{
-    width: 100%; padding: 9px 12px; background: #222; border: 1px solid #444;
-    border-radius: 6px; color: #eee; font-size: .95rem; box-sizing: border-box;
-  }}
-  .field {{ margin-bottom: 1.4rem; }}
-  /* ── Debrid rows ── */
-  .debrid-row {{
-    display: flex; gap: 8px; align-items: center;
-    background: #1a1a1a; border: 1px solid #333; border-radius: 7px;
-    padding: 8px 10px; margin-bottom: 8px;
-  }}
-  .debrid-row select {{
-    background: #222; border: 1px solid #444; border-radius: 5px;
-    color: #eee; font-size: .9rem; padding: 6px 8px; flex-shrink: 0; cursor: pointer;
-  }}
-  .debrid-row input[type=password] {{
-    flex: 1; padding: 6px 10px; font-size: .9rem;
-  }}
-  .remove-btn {{
-    background: none; border: none; color: #666; font-size: 1.2rem;
-    cursor: pointer; flex-shrink: 0; padding: 2px 4px; line-height: 1;
-  }}
-  .remove-btn:hover {{ color: #e55; }}
-  .add-btn {{
-    background: none; border: 1px dashed #444; color: #888; border-radius: 6px;
-    padding: 7px 14px; font-size: .88rem; cursor: pointer; width: 100%;
-  }}
-  .add-btn:hover {{ border-color: #7c3aed; color: #a78bfa; }}
-  /* ── Sites ── */
-  #siteSearch {{ width: 100%; padding: 7px 12px; background: #222; border: 1px solid #444;
-                 border-bottom: none; border-radius: 6px 6px 0 0; color: #eee;
-                 font-size: .9rem; box-sizing: border-box; }}
-  #siteSearch:focus {{ outline: none; border-color: #7c3aed; }}
-  .sites-list {{ max-height: 260px; overflow-y: auto; background: #1a1a1a;
-                 border: 1px solid #444; border-radius: 0 0 6px 6px; padding: 6px; }}
-  .site-item {{ display: flex; align-items: center; gap: 10px; padding: 5px 6px;
-                font-size: .9rem; cursor: pointer; border-radius: 5px; }}
-  .site-item:hover {{ background: #252525; }}
-  .site-item input[type=checkbox] {{ width: auto; flex-shrink: 0; accent-color: #7c3aed; cursor: pointer; }}
-  .site-logo {{ width: 24px; height: 24px; object-fit: contain; border-radius: 3px; flex-shrink: 0; }}
-  .site-logo-placeholder {{ width: 24px; height: 24px; flex-shrink: 0; }}
-  /* ── Actions ── */
-  .actions {{ display: flex; gap: 10px; margin-bottom: 1rem; }}
-  .btn {{ flex: 1; background: #7c3aed; color: #fff; border: none; padding: 11px 16px;
-          border-radius: 7px; font-size: .95rem; cursor: pointer; text-align: center;
-          text-decoration: none; display: block; }}
-  .btn:hover {{ background: #6d28d9; }}
-  .btn-secondary {{ background: #2a2a2a; border: 1px solid #444; }}
-  .btn-secondary:hover {{ background: #333; }}
-  /* ── Install block ── */
-  .install-row {{ display: flex; align-items: center; gap: 8px; background: #1a1a1a;
-                  border: 1px solid #333; border-radius: 7px; padding: 10px 12px;
-                  margin-bottom: 8px; }}
-  .install-url {{ flex: 1; font-size: .8rem; color: #999; overflow: hidden;
-                  text-overflow: ellipsis; white-space: nowrap; }}
-  .copy-btn {{ background: #2a2a2a; border: 1px solid #444; color: #ccc; padding: 5px 12px;
-               border-radius: 5px; font-size: .8rem; cursor: pointer; flex-shrink: 0; }}
-  .copy-btn:hover {{ background: #333; }}
-  .copy-btn.copied {{ color: #4ade80; border-color: #4ade80; }}
-  #installBlock {{ display: none; }}
-</style>
-</head>
-<body>
-<h1>xxxclub Stremio Addon</h1>
-
-<div class="field">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <label style="margin:0">Debrid Services</label>
-  </div>
-  <div id="debridList"></div>
-  <button class="add-btn" onclick="addDebridRow()">+ Add debrid service</button>
-</div>
-
-<div class="field" style="margin-top:1.4rem">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-    <label style="margin:0">Sites</label>
-    <button type="button" class="btn btn-secondary"
-            style="flex:none;padding:3px 10px;font-size:.8rem;width:auto"
-            onclick="clearSites()">Clear all</button>
-  </div>
-  <input type="text" id="siteSearch" placeholder="Search sites…" oninput="filterSites(this.value)">
-  <div class="sites-list" id="sitesList">{sites_html}</div>
-</div>
-
-<div class="actions" style="margin-top:1.4rem">
-  <button class="btn" onclick="buildLinks()">Generate Install Link</button>
-</div>
-
-<div id="installBlock">
-  <div class="install-row">
-    <span class="install-url" id="httpUrl"></span>
-    <button class="copy-btn" onclick="copyUrl('httpUrl', this)">Copy</button>
-  </div>
-  <div class="install-row">
-    <span class="install-url" id="stremioUrl"></span>
-    <button class="copy-btn" onclick="copyUrl('stremioUrl', this)">Copy</button>
-    <a class="btn" id="stremioLink" href="#"
-       style="flex:none;padding:5px 14px;font-size:.85rem;">Open in Stremio</a>
-  </div>
-</div>
-
+_REDIRECT_TO_CONFIG_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Redirecting…</title></head><body>
 <script>
-const SVC_OPTIONS = `{svc_options}`;
-const INITIAL_DEBRID = {initial_debrid_json};
-
-const webPort = location.port || (location.protocol === 'https:' ? '443' : '80');
-const base = location.protocol + '//' + location.hostname + (webPort ? ':' + webPort : '');
-
-document.getElementById('sitesList').addEventListener('change', resetInstall);
-
-function addDebridRow(service, key) {{
-  const row = document.createElement('div');
-  row.className = 'debrid-row';
-  row.innerHTML =
-    '<select class="svc-select" onchange="resetInstall()">' + SVC_OPTIONS + '</select>' +
-    '<input type="password" class="svc-key" placeholder="API key" oninput="resetInstall()">' +
-    '<button class="remove-btn" title="Remove" onclick="this.parentElement.remove();resetInstall()">×</button>';
-  if (service) row.querySelector('.svc-select').value = service;
-  if (key)     row.querySelector('.svc-key').value = key;
-  document.getElementById('debridList').appendChild(row);
-  resetInstall();
-}}
-
-// Populate from server-side initial state
-INITIAL_DEBRID.forEach(e => addDebridRow(e.service, e.key));
-
-function filterSites(q) {{
-  const term = q.toLowerCase();
-  document.querySelectorAll('#sitesList .site-item').forEach(el => {{
-    el.style.display = el.dataset.name.includes(term) ? '' : 'none';
-  }});
-}}
-
-function resetInstall() {{
-  document.getElementById('installBlock').style.display = 'none';
-}}
-
-function clearSites() {{
-  document.querySelectorAll('#sitesList input[type=checkbox]').forEach(el => el.checked = false);
-  resetInstall();
-}}
-
-function buildLinks() {{
-  const rows = document.querySelectorAll('#debridList .debrid-row');
-  const debridList = [];
-  rows.forEach(row => {{
-    const svc = row.querySelector('.svc-select').value;
-    const key = row.querySelector('.svc-key').value.trim();
-    if (svc && key) debridList.push({{ service: svc, key }});
-  }});
-  const checked = [...document.querySelectorAll('#sitesList input:checked')].map(el => el.value);
-  const cfg = {{}};
-  if (debridList.length) cfg.debrid = debridList;
-  if (checked.length)   cfg.sites  = checked;
-  const encoded = btoa(JSON.stringify(cfg)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
-  const httpUrl    = base + '/stremio/' + encoded + '/manifest.json';
-  const stremioUrl = 'stremio://' + location.hostname +
-                     (webPort ? ':' + webPort : '') +
-                     '/stremio/' + encoded + '/manifest.json';
-  document.getElementById('httpUrl').textContent    = httpUrl;
-  document.getElementById('stremioUrl').textContent = stremioUrl;
-  document.getElementById('stremioLink').href        = stremioUrl;
-  document.getElementById('installBlock').style.display = 'block';
-}}
-
-function copyUrl(id, btn) {{
-  const text = document.getElementById(id).textContent;
-  navigator.clipboard.writeText(text).then(() => {{
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => {{ btn.textContent = 'Copy'; btn.classList.remove('copied'); }}, 2000);
-  }});
-}}
+(function(){{
+  var cfg = {config_json};
+  if (cfg.debrid && cfg.debrid.length) {{
+    var e = cfg.debrid[0];
+    localStorage.setItem('debrid_config', JSON.stringify({{service: e.service, key: e.key}}));
+  }}
+  if (cfg.sites && cfg.sites.length) {{
+    localStorage.setItem('stremio_sites', JSON.stringify(cfg.sites));
+  }} else {{
+    localStorage.removeItem('stremio_sites');
+  }}
+  location.replace('/configure');
+}})();
 </script>
-</body>
-</html>"""
-
-
-def _render_sites_html(selected: list[str]) -> str:
-    try:
-        all_sites = _api_get("/api/v1/sites").get("sites", [])
-    except Exception:
-        return "<span style='color:#888'>Could not load sites.</span>"
-    parts = []
-    for s in all_sites:
-        uuid = s.get("uuid", "")
-        name = s.get("name", "")
-        logo_url = s.get("logo_url") or ""
-        checked = "checked" if uuid in selected else ""
-        logo = (
-            f'<img class="site-logo" src="{logo_url}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
-            if logo_url else
-            '<span class="site-logo-placeholder"></span>'
-        )
-        parts.append(
-            f'<div class="site-item" data-name="{name.lower()}">'
-            f'<input type="checkbox" value="{uuid}" {checked}>'
-            f'{logo}'
-            f'<span onclick="this.previousElementSibling.previousElementSibling.click()">{name}</span>'
-            f'</div>'
-        )
-    return "\n".join(parts)
-
-
-def _render_configure(cfg: dict) -> str:
-    selected_sites = cfg.get("sites") or []
-    debrid_entries = _get_debrid_entries(cfg)
-    return _CONFIGURE_HTML.format(
-        sites_html=_render_sites_html(selected_sites),
-        svc_options=_SVC_OPTIONS,
-        initial_debrid_json=json.dumps(debrid_entries),
-    )
+<p>Redirecting…</p>
+</body></html>"""
 
 
 @router.get("/configure", response_class=HTMLResponse)
 def configure_toplevel():
-    return HTMLResponse(_render_configure({}))
+    html = _REDIRECT_TO_CONFIG_HTML.format(config_json=json.dumps({}))
+    return HTMLResponse(html)
 
 
 @router.get("/{config}/configure", response_class=HTMLResponse)
 def configure(config: str):
-    return HTMLResponse(_render_configure(_decode_config(config)))
+    html = _REDIRECT_TO_CONFIG_HTML.format(config_json=json.dumps(_decode_config(config)))
+    return HTMLResponse(html)
 
 
 # ─── Catalog ─────────────────────────────────────────────────────────────────

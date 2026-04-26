@@ -23,8 +23,6 @@
   <div class="adv-bar" style="padding:0;border:none;flex-wrap:nowrap;gap:6px;">
     <form method="GET" action="/movies" style="display:contents">
       <input type="hidden" name="q" value="{{ q }}">
-      <input class="adv-inp" type="date" name="date_from" value="{{ date_from }}" title="From">
-      <input class="adv-inp" type="date" name="date_to" value="{{ date_to }}" title="To">
       <select class="adv-sel" name="sort_by">
         {% for col, label in [("date","Release Date"),("seeders","Top Seeders"),("title","Title"),("site_name","Studio")] %}
         <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>

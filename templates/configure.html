@@ -43,14 +43,24 @@
     {% if stremio_enabled %}
     <div class="config-field" style="max-width:none">
       <label class="config-label">Sites</label>
-      <div class="config-hint">Select sites to include in your Stremio addon. Leave empty to include all.</div>
+      <div class="config-hint">Select sites to show in the Stremio addon.</div>
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:0">
         <input class="config-input" id="site-search" placeholder="Search sites…" oninput="filterSites(this.value)"
                style="border-radius:8px 8px 0 0;margin-bottom:0">
         <button type="button" class="config-btn secondary" onclick="clearSites()" style="flex-shrink:0;align-self:stretch;border-radius:8px 8px 0 0;border-bottom:none">Clear all</button>
       </div>
       <div id="sites-list" style="max-height:240px;overflow-y:auto;background:var(--s1);border:1px solid var(--bd);border-top:none;border-radius:0 0 8px 8px;padding:6px">
-        <div style="color:var(--t3);font-size:12px;padding:6px">Loading sites…</div>
+        {% if sites %}
+          {% for s in sites %}
+          <label class="stremio-site-item" data-name="{{ (s.name or '') | lower }}">
+            <input type="checkbox" value="{{ s.uuid }}">
+            {% if s.logo_url %}<img class="stremio-site-logo" src="{{ s.logo_url }}" alt="" loading="lazy" onerror="this.style.display='none'">{% else %}<span class="stremio-site-logo-placeholder"></span>{% endif %}
+            <span>{{ s.name }}</span>
+          </label>
+          {% endfor %}
+        {% else %}
+          <div style="color:var(--t3);font-size:12px;padding:6px">No sites found.</div>
+        {% endif %}
       </div>
     </div>
 
@@ -68,6 +78,7 @@
         <span class="install-url" id="stremio-url"></span>
         <button class="config-btn secondary" style="flex-shrink:0;padding:5px 14px;font-size:12px" onclick="copyUrl('stremio-url', this)">Copy</button>
         <a class="config-btn" id="stremio-link" href="#" style="flex-shrink:0;padding:5px 14px;font-size:12px;text-decoration:none">Open in Stremio</a>
+        <a class="config-btn secondary" id="stremio-web-link" href="#" target="_blank" rel="noreferrer" style="flex-shrink:0;padding:5px 14px;font-size:12px;text-decoration:none">Stremio Web</a>
       </div>
     </div>
 
@@ -171,28 +182,44 @@ renderGrid();
 updateForm();
 
 {% if stremio_enabled %}
-// Stremio site selector
-fetch('/api/v1/sites')
-  .then(r => r.json())
-  .then(data => {
-    const list = document.getElementById('sites-list');
-    const sites = data.sites || [];
-    if (!sites.length) { list.innerHTML = '<div style="color:var(--t3);font-size:12px;padding:6px">No sites found.</div>'; return; }
-    list.innerHTML = sites.map(s => {
-      const logo = s.logo_url
-        ? `<img class="stremio-site-logo" src="${s.logo_url}" alt="" loading="lazy" onerror="this.style.display='none'">`
-        : `<span class="stremio-site-logo-placeholder"></span>`;
-      return `<label class="stremio-site-item" data-name="${(s.name||'').toLowerCase()}">
-        <input type="checkbox" value="${s.uuid}">
-        ${logo}
-        <span>${s.name}</span>
-      </label>`;
-    }).join('');
-    list.addEventListener('change', resetInstall);
-  })
-  .catch(() => {
-    document.getElementById('sites-list').innerHTML = '<div style="color:var(--t3);font-size:12px;padding:6px">Could not load sites.</div>';
+// Stremio site selector — restore saved selection from localStorage
+(function() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('stremio_sites') || '[]');
+    if (saved.length) {
+      document.querySelectorAll('#sites-list input[type=checkbox]').forEach(el => {
+        if (saved.includes(el.value)) el.checked = true;
+      });
+    }
+  } catch {}
+  sortSitesList();
+})();
+
+function sortSitesList() {
+  const list = document.getElementById('sites-list');
+  const items = [...list.querySelectorAll('.stremio-site-item')];
+  items.sort((a, b) => {
+    const aChecked = a.querySelector('input').checked ? 0 : 1;
+    const bChecked = b.querySelector('input').checked ? 0 : 1;
+    return aChecked - bChecked;
   });
+  items.forEach(el => list.appendChild(el));
+}
+
+function saveSites() {
+  const checked = [...document.querySelectorAll('#sites-list input:checked')].map(el => el.value);
+  if (checked.length) {
+    localStorage.setItem('stremio_sites', JSON.stringify(checked));
+  } else {
+    localStorage.removeItem('stremio_sites');
+  }
+}
+
+document.getElementById('sites-list').addEventListener('change', function() {
+  saveSites();
+  sortSitesList();
+  resetInstall();
+});
 
 function filterSites(q) {
   const term = q.toLowerCase();
@@ -203,6 +230,7 @@ function filterSites(q) {
 
 function clearSites() {
   document.querySelectorAll('#sites-list input[type=checkbox]').forEach(el => el.checked = false);
+  localStorage.removeItem('stremio_sites');
   resetInstall();
 }
 
@@ -220,9 +248,11 @@ function buildLinks() {
   const base = location.protocol + '//' + location.hostname + (webPort ? ':' + webPort : '');
   const httpUrl = base + '/stremio/' + encoded + '/manifest.json';
   const stremioUrl = 'stremio://' + location.hostname + (webPort ? ':' + webPort : '') + '/stremio/' + encoded + '/manifest.json';
+  const stremioWebUrl = 'https://web.stremio.com/#/addons?addon=' + encodeURIComponent(httpUrl);
   document.getElementById('http-url').textContent = httpUrl;
   document.getElementById('stremio-url').textContent = stremioUrl;
   document.getElementById('stremio-link').href = stremioUrl;
+  document.getElementById('stremio-web-link').href = stremioWebUrl;
   document.getElementById('install-block').style.display = 'block';
 }
 
