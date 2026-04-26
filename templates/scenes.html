@@ -10,6 +10,7 @@
       <span class="search-ico">&#128269;</span>
       <input class="search-input" type="text" name="q" value="{{ q }}" placeholder="Search scenes, performers…">
     </div>
+    <input type="hidden" name="tag" value="{{ tag }}">
     <input type="hidden" name="sort_by" value="{{ sort_by }}">
     <input type="hidden" name="sort_order" value="{{ sort_order }}">
     <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -17,13 +18,20 @@
 </div>
 
 <div class="filter-strip">
-  <a class="fpill{% if sort_by == 'date' and sort_order == 'desc' %} active{% endif %}" href="/scenes?sort_by=date&sort_order=desc">Latest</a>
-  <a class="fpill{% if sort_by == 'date_added' and sort_order == 'desc' %} active{% endif %}" href="/scenes?sort_by=date_added&sort_order=desc">New Releases</a>
-  <a class="fpill{% if sort_by == 'seeders' and sort_order == 'desc' %} active{% endif %}" href="/scenes?sort_by=seeders&sort_order=desc">Top Seeds</a>
+  <a class="fpill{% if sort_by == 'date' and sort_order == 'desc' %} active{% endif %}" href="{{ latest_url }}">Latest</a>
+  <a class="fpill{% if sort_by == 'date_added' and sort_order == 'desc' %} active{% endif %}" href="{{ new_releases_url }}">New Releases</a>
+  <a class="fpill{% if sort_by == 'seeders' and sort_order == 'desc' %} active{% endif %}" href="{{ top_seeds_url }}">Top Seeds</a>
+  {% if tag %}
+  <span class="fpill active">Tag: {{ tag }}</span>
+  {% endif %}
   <span class="fsep"></span>
   <div class="adv-bar" style="padding:0;border:none;flex-wrap:nowrap;gap:6px;">
     <form method="GET" action="/scenes" style="display:contents">
       <input type="hidden" name="q" value="{{ q }}">
+      <div class="adv-autocomplete">
+        <input class="adv-inp" id="scene-tag-input" type="text" name="tag" value="{{ tag }}" placeholder="Tags (comma-separated)" autocomplete="off" spellcheck="false">
+        <div class="tag-suggest" id="scene-tag-suggest" role="listbox" aria-label="Tag suggestions"></div>
+      </div>
       <select class="adv-sel" name="sort_by">
         {% for col, label in [("date","Release Date"),("date_added","Torrent Added"),("seeders","Top Seeders"),("title","Title"),("site_name","Site")] %}
         <option value="{{ col }}"{% if col == sort_by %} selected{% endif %}>{{ label }}</option>
@@ -94,6 +102,92 @@
 
 {% block scene_modal %}{% include "_scene_modal.html" %}{% endblock %}
 {% block scripts %}
+<script id="top-tags-data" type="application/json">{{ top_tags_json | safe }}</script>
 {% set modal_items_json = scenes_json %}
 {% include "_scene_modal_script.html" %}
+<script>
+const topTags = JSON.parse(document.getElementById('top-tags-data').textContent);
+const tagInput = document.getElementById('scene-tag-input');
+const tagSuggest = document.getElementById('scene-tag-suggest');
+let activeTagIndex = -1;
+let visibleTagSuggestions = [];
+
+function tagParts(value) {
+  const parts = value.split(',');
+  const head = parts.slice(0, -1).map(part => part.trim()).filter(Boolean);
+  const tail = (parts[parts.length - 1] || '').trim();
+  return { head, tail };
+}
+
+function renderTagSuggestions() {
+  const { head, tail } = tagParts(tagInput.value);
+  const used = new Set(head.map(part => part.toLowerCase()));
+  const query = tail.toLowerCase();
+  visibleTagSuggestions = topTags
+    .filter(item => !used.has(item.tag.toLowerCase()))
+    .filter(item => !query || item.tag.toLowerCase().includes(query))
+    .slice(0, 24);
+
+  activeTagIndex = visibleTagSuggestions.length ? 0 : -1;
+  tagSuggest.innerHTML = '';
+  if (!visibleTagSuggestions.length) {
+    tagSuggest.classList.remove('open');
+    return;
+  }
+
+  visibleTagSuggestions.forEach((item, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tag-suggest-item' + (index === activeTagIndex ? ' active' : '');
+    btn.setAttribute('role', 'option');
+    btn.innerHTML = `<span>${esc(item.tag)}</span><span class="tag-suggest-count">${item.use_count}</span>`;
+    btn.onmousedown = event => {
+      event.preventDefault();
+      applyTagSuggestion(item.tag);
+    };
+    tagSuggest.appendChild(btn);
+  });
+  tagSuggest.classList.add('open');
+}
+
+function syncActiveTag() {
+  const items = tagSuggest.querySelectorAll('.tag-suggest-item');
+  items.forEach((item, index) => {
+    item.classList.toggle('active', index === activeTagIndex);
+  });
+}
+
+function applyTagSuggestion(tagName) {
+  const { head } = tagParts(tagInput.value);
+  tagInput.value = [...head, tagName].join(', ');
+  tagSuggest.classList.remove('open');
+  tagInput.focus();
+}
+
+tagInput.addEventListener('focus', renderTagSuggestions);
+tagInput.addEventListener('input', renderTagSuggestions);
+tagInput.addEventListener('keydown', event => {
+  if (!tagSuggest.classList.contains('open') || !visibleTagSuggestions.length) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    activeTagIndex = (activeTagIndex + 1) % visibleTagSuggestions.length;
+    syncActiveTag();
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    activeTagIndex = (activeTagIndex - 1 + visibleTagSuggestions.length) % visibleTagSuggestions.length;
+    syncActiveTag();
+  } else if (event.key === 'Enter' && activeTagIndex >= 0) {
+    event.preventDefault();
+    applyTagSuggestion(visibleTagSuggestions[activeTagIndex].tag);
+  } else if (event.key === 'Escape') {
+    tagSuggest.classList.remove('open');
+  }
+});
+
+document.addEventListener('click', event => {
+  if (!tagSuggest.contains(event.target) && event.target !== tagInput) {
+    tagSuggest.classList.remove('open');
+  }
+});
+</script>
 {% endblock %}

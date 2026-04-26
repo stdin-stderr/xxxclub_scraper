@@ -94,6 +94,11 @@ def page_url(base_path: str, params: dict, page: int) -> str:
     return base_path + "?" + urlencode(args)
 
 
+def query_url(base_path: str, params: dict) -> str:
+    args = {k: v for k, v in params.items() if v}
+    return base_path + ("?" + urlencode(args) if args else "")
+
+
 def _enrich_scenes(scenes: list) -> None:
     for s in scenes:
         s["duration_human"] = format_duration(s.get("duration_seconds"))
@@ -117,6 +122,7 @@ def index():
 @app.get("/scenes", response_class=HTMLResponse)
 def scenes_ui(
     q: str = Query(default=""),
+    tag: str = Query(default=""),
     sort_by: str = Query(default="date"),
     sort_order: str = Query(default="desc"),
     per_page: int = Query(default=30),
@@ -124,23 +130,30 @@ def scenes_ui(
 ):
     limit = per_page if per_page in VALID_PER_PAGE_SCENES else 30
     data = _api_get("/api/v1/scenes", {
-        "q": q, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
+        "q": q, "tag": tag, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit, "page": page,
     })
+    tags_data = _api_get("/api/v1/tags", {"limit": 250})
     scenes = data["items"]
+    top_tags = tags_data.get("tags", [])
     total = data["total"]
     total_pages = data["total_pages"]
     _enrich_scenes(scenes)
 
     base_args = {
-        "q": q, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
+        "q": q, "tag": tag, "sort_by": sort_by, "sort_order": sort_order, "per_page": limit,
     }
+    latest_url = query_url("/scenes", {**base_args, "sort_by": "date", "sort_order": "desc"})
+    new_releases_url = query_url("/scenes", {**base_args, "sort_by": "date_added", "sort_order": "desc"})
+    top_seeds_url = query_url("/scenes", {**base_args, "sort_by": "seeders", "sort_order": "desc"})
     return HTMLResponse(_render(
         "scenes.html",
         active_page="scenes",
         scenes=scenes,
         scenes_json=json.dumps(scenes).replace("</", "<\\/"),
-        q=q,
+        top_tags_json=json.dumps(top_tags).replace("</", "<\\/"),
+        q=q, tag=tag,
         sort_by=sort_by, sort_order=sort_order, per_page=limit,
+        latest_url=latest_url, new_releases_url=new_releases_url, top_seeds_url=top_seeds_url,
         page=page, total=total, total_pages=total_pages,
         has_prev=page > 1, has_next=page < total_pages,
         prev_url=page_url("/scenes", base_args, page - 1),

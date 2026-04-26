@@ -284,6 +284,24 @@ def list_categories(conn) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
+def list_top_scene_tags(conn, limit: int = 250) -> list[dict]:
+    """Return the most frequently used scene tags."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT tag, COUNT(*) AS use_count
+            FROM scenes s
+            CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(s.tags, '[]'::jsonb)) AS tag
+            WHERE s.type = 'Scene'
+            GROUP BY tag
+            ORDER BY use_count DESC, tag ASC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return [{"tag": row[0], "use_count": row[1]} for row in cur.fetchall()]
+
+
 def count_torrents(
     conn,
     query: str | None = None,
@@ -399,6 +417,7 @@ def _apply_scene_filters(
     params: list,
     *,
     query,
+    tag,
     site,
     date_from,
     date_to,
@@ -409,6 +428,14 @@ def _apply_scene_filters(
     if query:
         sql += " AND s.title ILIKE %s"
         params.append(f"%{query}%")
+    if tag:
+        tags = [part.strip() for part in tag.split(",") if part.strip()]
+        for tag_name in tags:
+            sql += (
+                " AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(s.tags, '[]'::jsonb)) AS scene_tag"
+                " WHERE scene_tag ILIKE %s)"
+            )
+            params.append(tag_name)
     if site:
         sql += " AND (s.site_name ILIKE %s OR replace(s.site_name, ' ', '') ILIKE %s)"
         params.append(f"%{site}%")
@@ -435,6 +462,7 @@ def _apply_scene_filters(
 def count_scenes(
     conn,
     query: str | None = None,
+    tag: str | None = None,
     site: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -453,7 +481,7 @@ def count_scenes(
         "WHERE s.type = 'Scene'"
     )
     params: list = []
-    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+    sql = _apply_scene_filters(sql, params, query=query, tag=tag, site=site, date_from=date_from,
                                date_to=date_to, performer=performer, network_uuid=network_uuid,
                                site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     with conn.cursor() as cur:
@@ -464,6 +492,7 @@ def count_scenes(
 def count_movies(
     conn,
     query: str | None = None,
+    tag: str | None = None,
     site: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -482,7 +511,7 @@ def count_movies(
         "WHERE s.type = 'Movie'"
     )
     params: list = []
-    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+    sql = _apply_scene_filters(sql, params, query=query, tag=tag, site=site, date_from=date_from,
                                date_to=date_to, performer=performer, network_uuid=network_uuid,
                                site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     with conn.cursor() as cur:
@@ -533,6 +562,7 @@ _SCENE_SELECT = (
 def search_scenes(
     conn,
     query: str | None = None,
+    tag: str | None = None,
     site: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -557,7 +587,7 @@ def search_scenes(
 
     sql = _SCENE_SELECT + "WHERE s.type = 'Scene'"
     params: list = []
-    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+    sql = _apply_scene_filters(sql, params, query=query, tag=tag, site=site, date_from=date_from,
                                date_to=date_to, performer=performer, network_uuid=network_uuid,
                                site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     sql += " GROUP BY s.id"
@@ -574,6 +604,7 @@ def search_scenes(
 def search_movies(
     conn,
     query: str | None = None,
+    tag: str | None = None,
     site: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -592,7 +623,7 @@ def search_movies(
 
     sql = _SCENE_SELECT + "WHERE s.type = 'Movie'"
     params: list = []
-    sql = _apply_scene_filters(sql, params, query=query, site=site, date_from=date_from,
+    sql = _apply_scene_filters(sql, params, query=query, tag=tag, site=site, date_from=date_from,
                                date_to=date_to, performer=performer, network_uuid=network_uuid,
                                site_ref_expr="COALESCE(s.site_uuid, st.uuid)")
     sql += " GROUP BY s.id"

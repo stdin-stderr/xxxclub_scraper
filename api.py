@@ -51,6 +51,7 @@ def _paginated(items, total, page, limit):
 @app.get("/api/v1/scenes")
 def list_scenes(
     q: str = Query(default=""),
+    tag: str = Query(default=""),
     site: str = Query(default=""),
     performer: str = Query(default=""),
     network: str = Query(default=""),
@@ -70,7 +71,7 @@ def list_scenes(
     effective_date_to = date_to or date.today().isoformat()
     use_cache = not q
     key = cache.make_key(
-        "scenes", site=site, performer=performer, network=network,
+        "scenes", site=site, performer=performer, network=network, tag=tag,
         date_from=date_from, date_to=effective_date_to,
         sort_by=sort_by, sort_order=sort_order, limit=limit, offset=offset,
     ) if use_cache else None
@@ -79,12 +80,13 @@ def list_scenes(
     conn = db.get_connection()
     try:
         total = db.count_scenes(
-            conn, q or None, site or None, date_from or None, effective_date_to,
+            conn, q or None, tag or None, site or None, date_from or None, effective_date_to,
             performer=performer or None, network_uuid=network or None,
         )
         items = db.search_scenes(
             conn,
             query=q or None,
+            tag=tag or None,
             site=site or None,
             date_from=date_from or None,
             date_to=effective_date_to,
@@ -135,12 +137,13 @@ def list_movies(
     conn = db.get_connection()
     try:
         total = db.count_movies(
-            conn, q or None, site or None, date_from or None, effective_date_to,
+            conn, q or None, None, site or None, date_from or None, effective_date_to,
             performer=performer or None, network_uuid=network or None,
         )
         items = db.search_movies(
             conn,
             query=q or None,
+            tag=None,
             site=site or None,
             date_from=date_from or None,
             date_to=effective_date_to,
@@ -225,6 +228,21 @@ def list_categories():
     finally:
         conn.close()
     result = {"categories": cats}
+    cache.cache_set(key, result, ttl=3600)
+    return JSONResponse(content=result)
+
+
+@app.get("/api/v1/tags")
+def list_tags(limit: int = Query(default=250, ge=1, le=250)):
+    key = cache.make_key("scene_tags", limit=limit)
+    if (hit := cache.cache_get(key)) is not None:
+        return JSONResponse(content=hit)
+    conn = db.get_connection()
+    try:
+        tags = db.list_top_scene_tags(conn, limit=limit)
+    finally:
+        conn.close()
+    result = {"tags": _serial(tags)}
     cache.cache_set(key, result, ttl=3600)
     return JSONResponse(content=result)
 

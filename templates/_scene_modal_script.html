@@ -81,10 +81,12 @@ function openModal(idx) {
   const tagsEl = document.getElementById('modal-tags');
   tagsEl.innerHTML = '';
   (s.tags || []).forEach(t => {
-    const sp = document.createElement('span');
-    sp.className = 'modal-tag';
-    sp.textContent = t;
-    tagsEl.appendChild(sp);
+    const link = document.createElement('a');
+    link.className = 'modal-tag';
+    link.href = '/scenes?tag=' + encodeURIComponent(t);
+    link.textContent = t;
+    link.onclick = () => closeModal();
+    tagsEl.appendChild(link);
   });
 
   document.getElementById('modal-desc').textContent = s.description || '';
