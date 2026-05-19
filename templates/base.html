@@ -364,6 +364,11 @@ a:hover{text-decoration:underline;}
       <a class="sb-item{% if active_page in ('networks','network') %} active{% endif %}" href="/networks">
         <span class="sb-icon">&#8862;</span>Networks
       </a>
+      <div class="sb-sep"></div>
+      <span class="sb-section-lbl">My Debrid</span>
+      <a class="sb-item{% if active_page == 'library' %} active{% endif %}" href="/library">
+        <span class="sb-icon">&#9711;</span>My Library
+      </a>
     </nav>
     <div class="sb-footer">
       <a class="sb-item{% if active_page == 'configure' %} active{% endif %}" href="/configure" style="font-size:12px;">

@@ -41,6 +41,12 @@ def _api_get(path: str, params: dict) -> dict:
     return resp.json()
 
 
+def _api_post(path: str, body: dict) -> dict:
+    resp = req_lib.post(f"{API_BASE}{path}", json=body, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def format_duration(seconds) -> str:
     if seconds is None:
         return ""
@@ -467,7 +473,7 @@ async def streams_check(request: Request):
         raise HTTPException(status_code=400, detail="service, key, and hashes required")
     try:
         client = debrid.DebridClient(service, key)
-        cached = client.check_cached(hashes)
+        cached = client.check_cached(hashes, bypass_cache=True)
     except debrid.DebridAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except ValueError as e:
@@ -511,6 +517,62 @@ def streams_url(service: str, info_hash: str, key: str = Query(default="")):
         raise HTTPException(status_code=401, detail=str(e))
     except debrid.DebridError as e:
         return JSONResponse({"status": "error", "message": str(e)})
+
+
+@app.get("/library", response_class=HTMLResponse)
+def library_ui():
+    return HTMLResponse(_render("library.html", active_page="library"))
+
+
+@app.get("/api/library/content")
+def library_content(service: str = Query(default=""), key: str = Query(default="")):
+    if not service or not key:
+        raise HTTPException(status_code=400, detail="service and key required")
+    try:
+        client = debrid.DebridClient(service, key)
+        items, total = client.list_magnets(limit=500)
+        all_items = list(items)
+        offset = 500
+        while offset < total:
+            more, _ = client.list_magnets(limit=500, offset=offset)
+            all_items.extend(more)
+            offset += 500
+        hash_added: dict[str, str] = {}
+        for item in all_items:
+            h = (item.get("hash") or "").lower()
+            if h:
+                hash_added[h] = item.get("added_at") or item.get("created_at") or ""
+
+        hashes = list(hash_added.keys())
+        if not hashes:
+            return JSONResponse({"scenes": [], "unmatched": [], "unknown_count": 0, "total_debrid": total})
+        result = _api_post("/api/v1/scenes/by-hashes", {"hashes": hashes})
+        scenes = result.get("scenes", [])
+        _enrich_scenes(scenes)
+
+        # Attach the debrid added date (most recent among the scene's linked hashes)
+        # and sort newest-first.
+        for scene in scenes:
+            scene_hashes = [t["info_hash"] for t in (scene.get("torrents") or [])]
+            dates = [hash_added[h] for h in scene_hashes if hash_added.get(h)]
+            scene["debrid_added_at"] = max(dates) if dates else ""
+        scenes.sort(key=lambda s: s.get("debrid_added_at") or "", reverse=True)
+
+        unmatched = result.get("unmatched", [])
+        for t in unmatched:
+            t["debrid_added_at"] = hash_added.get(t.get("info_hash", ""), "")
+        unmatched.sort(key=lambda t: t.get("debrid_added_at") or "", reverse=True)
+
+        return JSONResponse({
+            "scenes": scenes,
+            "unmatched": unmatched,
+            "unknown_count": len(result.get("unknown", [])),
+            "total_debrid": total,
+        })
+    except debrid.DebridAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except debrid.DebridError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/queue-stream")

@@ -981,6 +981,58 @@ def fetch_by_hashes(conn, hashes: list[str]) -> list[dict]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def get_scenes_for_hashes(conn, hashes: list[str]) -> dict:
+    """Cross-reference info hashes with the database.
+
+    Returns a dict with three keys:
+    - scenes: full scene records (same shape as search_scenes) for hashes that
+      have a torrent_scenes link; ALL torrents for each scene are included, not
+      just the ones that matched.
+    - unmatched: raw torrent rows for hashes in the DB but with no scene link.
+    - unknown: hash strings that are not in the DB at all.
+    """
+    if not hashes:
+        return {"scenes": [], "unmatched": [], "unknown": []}
+
+    hashes = [h.lower() for h in hashes]
+
+    sql = (
+        _SCENE_SELECT
+        + "WHERE s.id IN (SELECT DISTINCT scene_id FROM torrent_scenes WHERE info_hash = ANY(%s)) "
+        + "GROUP BY s.id ORDER BY s.date DESC NULLS LAST"
+    )
+    with conn.cursor() as cur:
+        cur.execute(sql, (hashes,))
+        cols = [desc[0] for desc in cur.description]
+        scenes = [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT info_hash FROM torrent_scenes WHERE info_hash = ANY(%s)",
+            (hashes,),
+        )
+        matched_hashes = {row[0] for row in cur.fetchall()}
+
+    remaining = [h for h in hashes if h not in matched_hashes]
+
+    unmatched = []
+    if remaining:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT t.info_hash, t.title, t.category, t.size_bytes, t.seeders, t.date_added "
+                "FROM torrents t WHERE t.info_hash = ANY(%s) "
+                "ORDER BY t.date_added DESC NULLS LAST",
+                (remaining,),
+            )
+            cols2 = [desc[0] for desc in cur.description]
+            unmatched = [dict(zip(cols2, row)) for row in cur.fetchall()]
+
+    db_found = matched_hashes | {r["info_hash"] for r in unmatched}
+    unknown = [h for h in hashes if h not in db_found]
+
+    return {"scenes": scenes, "unmatched": unmatched, "unknown": unknown}
+
+
 def fetch_unmatched(conn, limit: int = 100, retry_days: int = 7) -> list[dict]:
     """Return up to `limit` torrents that need a metadata lookup attempt.
 

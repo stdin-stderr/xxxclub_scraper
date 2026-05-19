@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import cache
 import db
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Media Library API", version="1")
@@ -396,6 +396,20 @@ def get_scene(scene_id: str):
     if scene is None:
         raise HTTPException(status_code=404, detail="Scene not found")
     return JSONResponse(content=_serial(scene))
+
+
+@app.post("/api/v1/scenes/by-hashes")
+async def scenes_by_hashes(request: Request):
+    body = await request.json()
+    hashes = body.get("hashes", [])
+    if not isinstance(hashes, list):
+        raise HTTPException(status_code=400, detail="hashes must be a list")
+    conn = db.get_connection()
+    try:
+        result = db.get_scenes_for_hashes(conn, hashes)
+    finally:
+        conn.close()
+    return JSONResponse(content=_serial(result))
 
 
 if __name__ == "__main__":
